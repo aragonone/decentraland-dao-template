@@ -1,0 +1,36 @@
+{
+  "name": "decentraland-dao-template",
+  "version": "0.0.1",
+  "author": "Aragon Association",
+  "description": "Aragon dao-template for Decentraland",
+  "homepage": "https://github.com/ajsantander/decentraland-dao-template#readme",
+  "license": "(GPL-3.0-or-later OR AGPL-3.0-or-later)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ajsantander/decentraland-dao-template.git"
+  },
+  "keywords": [
+    "aragon",
+    "dao",
+    "template",
+    "decentraland"
+  ],
+  "bugs": {
+    "url": "https://github.com/ajsantander/decentraland-dao-template/issues"
+  },
+  "scripts": {
+    "compile": "truffle compile --all",
+    "test": "npm run test:ganache",
+    "test:ganache": "./node_modules/@aragon/templates-shared/scripts/test-ganache.sh",
+    "deploy:rpc": "npm run compile && truffle exec ./scripts/deploy.js --network rpc"
+  },
+  "dependencies": {
+    "@aragon/os": "4.2.0",
+    "@aragon/templates-shared": "^1.0.0-rc.1"
+  },
+  "devDependencies": {
+    "eth-ens-namehash": "^2.0.8",
+    "@aragon/test-helpers": "^2.0.0",
+    "truffle": "4.1.14"
+  }
+}
