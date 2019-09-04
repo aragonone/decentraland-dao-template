@@ -7,6 +7,7 @@ const { getEventArgument } = require('@aragon/test-helpers/events')
 const { deployedAddresses } = require('@aragon/templates-shared/lib/arapp-file')(web3)
 const { getInstalledApps, getInstalledAppsById } = require('@aragon/templates-shared/helpers/events')(artifacts)
 const { assertRole, assertMissingRole } = require('@aragon/templates-shared/helpers/assertRole')(web3)
+const { EMPTY_SCRIPT } = require('@aragon/test-helpers/evmScript')
 
 const DecentralandTemplate = artifacts.require('DecentralandTemplate')
 
@@ -26,10 +27,10 @@ const ONE_WEEK = ONE_DAY * 7
 const THIRTY_DAYS = ONE_DAY * 30
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 
-contract('DecentralandTemplate', ([_, owner, holder]) => {
+contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
   let daoID, template, dao, acl, ens
   let voting, tokenWrapper, agent
-  let mana
+  let mana, token
 
   const TOKEN_NAME = 'Decentraland Token'
   const TOKEN_SYMBOL = 'DCL'
@@ -99,17 +100,6 @@ contract('DecentralandTemplate', ([_, owner, holder]) => {
       assert.equal((await token.decimals()).toString(), 18)
     })
 
-    it('should have voting app correctly setup', async () => {
-      assert.isTrue(await voting.hasInitialized(), 'voting not initialized')
-      assert.equal((await voting.supportRequiredPct()).toString(), SUPPORT_REQUIRED)
-      assert.equal((await voting.minAcceptQuorumPct()).toString(), MIN_ACCEPTANCE_QUORUM)
-      assert.equal((await voting.voteTime()).toString(), VOTE_DURATION)
-
-      await assertRole(acl, voting, voting, 'CREATE_VOTES_ROLE', tokenWrapper)
-      await assertRole(acl, voting, voting, 'MODIFY_QUORUM_ROLE')
-      await assertRole(acl, voting, voting, 'MODIFY_SUPPORT_ROLE')
-    })
-
     it('sets up DAO and ACL permissions correctly', async () => {
       await assertRole(acl, dao, voting, 'APP_MANAGER_ROLE')
       await assertRole(acl, acl, voting, 'CREATE_PERMISSIONS_ROLE')
@@ -119,6 +109,28 @@ contract('DecentralandTemplate', ([_, owner, holder]) => {
       const reg = await EVMScriptRegistry.at(await acl.getEVMScriptRegistry())
       await assertRole(acl, reg, voting, 'REGISTRY_ADD_EXECUTOR_ROLE')
       await assertRole(acl, reg, voting, 'REGISTRY_MANAGER_ROLE')
+    })
+
+    it(`gas costs must be up to ~${expectedTotalCost} gas`, async () => {
+      const tokenCreationCost = tokenReceipt.receipt.gasUsed
+      assert.isAtMost(tokenCreationCost, expectedTokenCreationCost, `token creation call should cost up to ${tokenCreationCost} gas`)
+
+      const daoCreationCost = instanceReceipt.receipt.gasUsed
+      assert.isAtMost(daoCreationCost, expectedDaoCreationCost, `dao creation call should cost up to ${expectedDaoCreationCost} gas`)
+
+      const totalCost = tokenCreationCost + daoCreationCost
+      assert.isAtMost(totalCost, expectedTotalCost, `total costs should be up to ${expectedTotalCost} gas`)
+    })
+
+    it('should have voting app correctly setup', async () => {
+      assert.isTrue(await voting.hasInitialized(), 'voting not initialized')
+      assert.equal((await voting.supportRequiredPct()).toString(), SUPPORT_REQUIRED)
+      assert.equal((await voting.minAcceptQuorumPct()).toString(), MIN_ACCEPTANCE_QUORUM)
+      assert.equal((await voting.voteTime()).toString(), VOTE_DURATION)
+
+      await assertRole(acl, voting, voting, 'CREATE_VOTES_ROLE', tokenWrapper)
+      await assertRole(acl, voting, voting, 'MODIFY_QUORUM_ROLE')
+      await assertRole(acl, voting, voting, 'MODIFY_SUPPORT_ROLE')
     })
 
     it('should have agent app correctly setup', async () => {
@@ -134,16 +146,69 @@ contract('DecentralandTemplate', ([_, owner, holder]) => {
       await assertMissingRole(acl, agent, 'DESIGNATE_SIGNER_ROLE')
       await assertMissingRole(acl, agent, 'ADD_PRESIGNED_HASH_ROLE')
     })
+  })
 
-    it(`gas costs must be up to ~${expectedTotalCost} gas`, async () => {
-      const tokenCreationCost = tokenReceipt.receipt.gasUsed
-      assert.isAtMost(tokenCreationCost, expectedTokenCreationCost, `token creation call should cost up to ${tokenCreationCost} gas`)
+  describe('when inspecting the token-wrapper app', () => {
+    it('has an erc20 and a minime token', async () => {
+      assert.isTrue(await tokenWrapper.isForwarder())
+      assert.equal(await tokenWrapper.erc20(), mana.address)
+      assert.equal(await tokenWrapper.token(), token.address)
+    })
 
-      const daoCreationCost = instanceReceipt.receipt.gasUsed
-      assert.isAtMost(daoCreationCost, expectedDaoCreationCost, `dao creation call should cost up to ${expectedDaoCreationCost} gas`)
+    it('can mint tokens', async () => {
+      await mana.approve(tokenWrapper.address, 2e18, { from: holder })
+      await tokenWrapper.lock(2e18, { from: holder })
 
-      const totalCost = tokenCreationCost + daoCreationCost
-      assert.isAtMost(totalCost, expectedTotalCost, `total costs should be up to ${expectedTotalCost} gas`)
+      assert.isTrue(await tokenWrapper.canForward(holder, '0x'))
+      assert.equal((await tokenWrapper.getLockedAmount(holder)).toString(), 2e18)
+      assert.equal((await token.balanceOf(holder)).toString(), 2e18)
+      assert.equal((await mana.balanceOf(holder)).toString(), 999998e18)
+    })
+
+    it('can not mint invalid amounts', async () => {
+      await assertRevert(tokenWrapper.lock(0, { from: holder }), 'TW_LOCK_AMOUNT_ZERO')
+      await assertRevert(tokenWrapper.lock(1e30, { from: holder }), 'TW_ERC20_TRANSFER_FROM_FAILED')
+    })
+
+    it('can burn tokens', async () => {
+      await tokenWrapper.unlock(1e18, { from: holder })
+
+      assert.equal((await tokenWrapper.getLockedAmount(holder)).toString(), 1e18)
+      assert.equal((await token.balanceOf(holder)).toString(), 1e18)
+      assert.equal((await mana.balanceOf(holder)).toString(), 999999e18)
+    })
+
+    it('can not burn invalid amounts', async () => {
+      await assertRevert(tokenWrapper.unlock(0, { from: holder }), 'TW_UNLOCK_AMOUNT_ZERO')
+      await assertRevert(tokenWrapper.unlock(1e30, { from: holder }), 'TW_INVALID_UNLOCK_AMOUNT')
+    })
+
+    it('does not allow to transfer tokens', async () => {
+      await assertRevert(token.transfer(someone, 1e16, { from: holder }))
+    })
+
+    it('does not allow to approve tokens', async () => {
+      await assertRevert(token.approve(someone, 1e16, { from: holder }))
+    })
+
+    describe.skip('when creating votes', () => {
+      let holderBalance
+
+      before('check holder token balance', async () => {
+        holderBalance = (await token.balanceOf(holder)).toNumber()
+        assert.equal(holderBalance > 0, true, `holder has no token balance`)
+      })
+
+      before('create a vote', async () => {
+        // await voting.newVote(EMPTY_SCRIPT, 'Vote metadata', { from: holder })
+        await voting.forward(EMPTY_SCRIPT, { from: holder })
+        assert.equal((await voting.votesLength()).toNumber(), 1, `a vote should exist`)
+      })
+
+      it('description', async () => {
+      })
+
+      // TODO: vote tests
     })
   })
 })
