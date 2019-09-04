@@ -26,7 +26,8 @@
   },
   "dependencies": {
     "@aragon/os": "4.2.0",
-    "@aragon/templates-shared": "^1.0.0-rc.1"
+    "@aragon/templates-shared": "^1.0.0-rc.1",
+    "@aragon/token-wrapper": "github:aragonone/token-wrapper"
   },
   "devDependencies": {
     "truffle": "4.1.14",
