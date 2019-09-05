@@ -2,7 +2,7 @@ const { APPS } = require('@aragon/templates-shared/helpers/apps')
 const deployTemplate = require('@aragon/templates-shared/scripts/deploy-template')
 
 const TEMPLATE_NAME = 'decentraland-template'
-const CONTRACT_NAME = 'DecentralandTemplate'
+const CONTRACT_NAME = 'DecentralandTemplateMock'
 
 const apps = [
   ...APPS,

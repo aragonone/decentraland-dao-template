@@ -7,7 +7,8 @@ import "@aragon/token-wrapper/contracts/TokenWrapper.sol";
 
 
 contract DecentralandTemplate is BaseTemplate, TokenCache {
-    bytes32 constant internal TOKEN_WRAPPER_APP_ID = 0x84fda9a3c8655fa3cc349a8375729741fc6f4cacca230ed8bfb04b38e833a961;
+    // token-wrapper.open.aragonpm.eth
+    bytes32 constant internal TOKEN_WRAPPER_APP_ID = 0x1fda7985bca2bed0615ee04a107b3262fe2a24b5ad427f2e8ef191a446d7841b;
 
     string constant private ERROR_BAD_VOTE_SETTINGS = "DECENTRALAND_BAD_VOTE_SETTINGS";
     string constant private ERROR_BAD_MANA_TOKEN = "DECENTRALAND_BAD_MANA_TOKEN";
@@ -25,10 +26,23 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
         _ensureMiniMeFactoryIsValid(_miniMeFactory);
     }
 
-    function newToken(string memory _name, string memory _symbol) public returns (MiniMeToken) {
+    function newTokenAndInstance(
+        string _name,
+        string _symbol,
+        string _id,
+        ERC20 _mana,
+        address _dclMultiSig,
+        uint64[3] _votingSettings
+    )
+        external
+    {
+        newToken(_name, _symbol);
+        newInstance(_id, _mana, _dclMultiSig, _votingSettings);
+    }
+
+    function newToken(string memory _name, string memory _symbol) public {
         MiniMeToken token = _createToken(_name, _symbol, TOKEN_DECIMALS);
         _cacheToken(token, msg.sender);
-        return token;
     }
 
     function newInstance(string memory _id, ERC20 _mana, address _dclMultiSig, uint64[3] memory _votingSettings) public {

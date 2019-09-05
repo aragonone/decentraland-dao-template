@@ -22,7 +22,7 @@
     "compile": "truffle compile --all",
     "test": "npm run test:ganache",
     "test:ganache": "./node_modules/@aragon/templates-shared/scripts/test-ganache.sh",
-    "deploy:rpc": "npm run compile && truffle exec ./scripts/deploy.js --network rpc"
+    "deploy:rpc": "npm run compile && truffle exec ./scripts/deploy-test.js --network rpc"
   },
   "dependencies": {
     "@aragon/os": "4.2.0",

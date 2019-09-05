@@ -9,7 +9,7 @@ const { getInstalledApps, getInstalledAppsById } = require('@aragon/templates-sh
 const { assertRole, assertMissingRole } = require('@aragon/templates-shared/helpers/assertRole')(web3)
 const { EMPTY_SCRIPT, encodeCallScript } = require('@aragon/test-helpers/evmScript')
 
-const DecentralandTemplate = artifacts.require('DecentralandTemplate')
+const DecentralandTemplate = artifacts.require('DecentralandTemplateMock')
 
 const ENS = artifacts.require('ENS')
 const ACL = artifacts.require('ACL')
@@ -25,7 +25,6 @@ const EVMScriptRegistry = artifacts.require('EVMScriptRegistry')
 
 const ONE_DAY = 60 * 60 * 24
 const ONE_WEEK = ONE_DAY * 7
-const THIRTY_DAYS = ONE_DAY * 30
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 
 contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
@@ -94,26 +93,20 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
   })
 
   describe('when the creation succeeds', () => {
-    let tokenReceipt, instanceReceipt
-
-    const expectedDaoCreationCost = 5e6
-    const expectedTokenCreationCost = 1.8e6
-    const expectedTotalCost = expectedTokenCreationCost + expectedDaoCreationCost
+    let receipt
 
     before('create token and entity', async () => {
       daoID = randomId()
+      receipt = await template.newTokenAndInstance(TOKEN_NAME, TOKEN_SYMBOL, daoID, mana.address, dclMultiSig.address, VOTING_SETTINGS, { from: owner })
 
-      tokenReceipt = await template.newToken(TOKEN_NAME, TOKEN_SYMBOL, { from: owner })
-      instanceReceipt = await template.newInstance(daoID, mana.address, dclMultiSig.address, VOTING_SETTINGS, { from: owner })
-
-      dao = Kernel.at(getEventArgument(instanceReceipt, 'DeployDao', 'dao'))
-      token = MiniMeToken.at(getEventArgument(tokenReceipt, 'DeployToken', 'token'))
+      dao = Kernel.at(getEventArgument(receipt, 'DeployDao', 'dao'))
+      token = MiniMeToken.at(getEventArgument(receipt, 'DeployToken', 'token'))
       acl = ACL.at(await dao.acl())
 
-      const installedApps = getInstalledAppsById(instanceReceipt)
-      installedApps['token-wrapper'] = getInstalledApps(instanceReceipt, namehash('token-wrapper.aragonpm.eth'))
+      const installedApps = getInstalledAppsById(receipt)
+      installedApps['token-wrapper'] = getInstalledApps(receipt, namehash('token-wrapper.aragonpm.eth'))
 
-      assert.equal(dao.address, getEventArgument(instanceReceipt, 'SetupDao', 'dao'), 'should have emitted a SetupDao event')
+      assert.equal(dao.address, getEventArgument(receipt, 'SetupDao', 'dao'), 'should have emitted a SetupDao event')
 
       assert.equal(installedApps.voting.length, 1, 'should have installed 1 voting app')
       voting = Voting.at(installedApps.voting[0])
@@ -149,15 +142,9 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
       await assertRole(acl, reg, voting, 'REGISTRY_MANAGER_ROLE')
     })
 
-    it(`gas costs must be up to ~${expectedTotalCost} gas`, async () => {
-      const tokenCreationCost = tokenReceipt.receipt.gasUsed
-      assert.isAtMost(tokenCreationCost, expectedTokenCreationCost, `token creation call should cost up to ${tokenCreationCost} gas`)
-
-      const daoCreationCost = instanceReceipt.receipt.gasUsed
-      assert.isAtMost(daoCreationCost, expectedDaoCreationCost, `dao creation call should cost up to ${expectedDaoCreationCost} gas`)
-
-      const totalCost = tokenCreationCost + daoCreationCost
-      assert.isAtMost(totalCost, expectedTotalCost, `total costs should be up to ${expectedTotalCost} gas`)
+    it('gas costs must be up to ~6.9e6 gas', async () => {
+      const cost = receipt.receipt.gasUsed
+      assert.isAtMost(cost, 6.9e6, 'dao creation call should cost up to 6.9e6 gas')
     })
 
     it('should have voting app correctly setup', async () => {
