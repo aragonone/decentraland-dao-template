@@ -2,12 +2,12 @@
   "name": "decentraland-dao-template",
   "version": "0.0.1",
   "author": "Aragon Association",
-  "description": "Aragon dao-template for Decentraland",
-  "homepage": "https://github.com/ajsantander/decentraland-dao-template#readme",
+  "description": "Aragon DAO Template for Decentraland",
+  "homepage": "https://github.com/aragonone/decentraland-dao-template#readme",
   "license": "(GPL-3.0-or-later OR AGPL-3.0-or-later)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ajsantander/decentraland-dao-template.git"
+    "url": "https://github.com/aragonone/decentraland-dao-template.git"
   },
   "keywords": [
     "aragon",
@@ -16,7 +16,7 @@
     "decentraland"
   ],
   "bugs": {
-    "url": "https://github.com/ajsantander/decentraland-dao-template/issues"
+    "url": "https://github.com/aragonone/decentraland-dao-template/issues"
   },
   "scripts": {
     "compile": "truffle compile --all",
