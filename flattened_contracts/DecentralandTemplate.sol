@@ -7873,6 +7873,7 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
 
     string constant private ERROR_BAD_VOTE_SETTINGS = "DECENTRALAND_BAD_VOTE_SETTINGS";
     string constant private ERROR_BAD_MANA_TOKEN = "DECENTRALAND_BAD_MANA_TOKEN";
+    string constant private ERROR_BAD_MULTISIG = "DECENTRALAND_BAD_MULTISIG";
 
     bool constant private TOKEN_TRANSFERABLE = false;
     uint8 constant private TOKEN_DECIMALS = uint8(18);
@@ -7892,33 +7893,28 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
         return token;
     }
 
-    function newInstance(string memory _id, ERC20 _mana, uint64[3] memory _votingSettings) public {
+    function newInstance(string memory _id, ERC20 _mana, address _dclMultiSig, uint64[3] memory _votingSettings) public {
         _validateId(_id);
         _validateVotingSettings(_votingSettings);
         _validateManaToken(_mana);
+        _validateMultiSig(_dclMultiSig);
 
         (Kernel dao, ACL acl) = _createDAO();
-        Voting voting = _setupApps(dao, acl, _mana, _votingSettings);
+        Voting voting = _setupApps(dao, acl, _mana, _dclMultiSig, _votingSettings);
 
-        _transferRootPermissionsFromTemplateAndFinalizeDAO(dao, voting);
+        _transferRootPermissionsFromTemplateAndFinalizeDAO(dao, _dclMultiSig);
         _registerID(_id, dao);
     }
 
-    function _setupApps(Kernel _dao, ACL _acl, ERC20 _mana, uint64[3] memory _votingSettings) internal returns (Voting) {
+    function _setupApps(Kernel _dao, ACL _acl, ERC20 _mana, address _dclMultiSig, uint64[3] memory _votingSettings) internal returns (Voting) {
         MiniMeToken token = _popTokenCache(msg.sender);
         Agent agent = _installDefaultAgentApp(_dao);
         Voting voting = _installVotingApp(_dao, token, _votingSettings);
         TokenWrapper tokenWrapper = _installTokenWrapperApp(_dao, token, _mana);
 
-        _setupPermissions(_acl, agent, voting, tokenWrapper);
+        _setupPermissions(_acl, agent, voting, tokenWrapper, _dclMultiSig);
 
         return voting;
-    }
-
-    function _setupPermissions( ACL _acl, Agent _agent, Voting _voting, TokenWrapper _tokenWrapper) internal {
-        _createAgentPermissions(_acl, _agent, _voting, _voting);
-        _createEvmScriptsRegistryPermissions(_acl, _voting, _voting);
-        _createVotingPermissions(_acl, _voting, _voting, _tokenWrapper, _voting);
     }
 
     function _installTokenWrapperApp(Kernel _dao, MiniMeToken _token, ERC20 _mana) internal returns (TokenWrapper) {
@@ -7926,6 +7922,27 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
         _token.changeController(tokenWrapper);
         tokenWrapper.initialize(_token, _mana);
         return tokenWrapper;
+    }
+
+    function _setupPermissions(ACL _acl, Agent _agent, Voting _voting, TokenWrapper _tokenWrapper, address _dclMultiSig) internal {
+        _createCustomAgentPermissions(_acl, _agent, _voting, _dclMultiSig);
+        _createEvmScriptsRegistryPermissions(_acl, _voting, _voting);
+        _createVotingPermissions(_acl, _voting, _voting, _tokenWrapper, _dclMultiSig);
+    }
+
+    function _createCustomAgentPermissions(ACL _acl, Agent _agent, Voting _voting, address _dclMultiSig) internal {
+        _acl.createPermission(_voting, _agent, _agent.EXECUTE_ROLE(), address(this));
+        _acl.createPermission(_voting, _agent, _agent.RUN_SCRIPT_ROLE(), address(this));
+
+        _acl.grantPermission(_dclMultiSig, _agent, _agent.EXECUTE_ROLE());
+        _acl.grantPermission(_dclMultiSig, _agent, _agent.RUN_SCRIPT_ROLE());
+
+        _acl.setPermissionManager(_dclMultiSig, _agent, _agent.EXECUTE_ROLE());
+        _acl.setPermissionManager(_dclMultiSig, _agent, _agent.RUN_SCRIPT_ROLE());
+    }
+
+    function _validateMultiSig(address _multiSig) internal {
+        require(isContract(_multiSig), ERROR_BAD_MULTISIG);
     }
 
     function _validateManaToken(ERC20 _mana) internal {

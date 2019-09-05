@@ -18,6 +18,7 @@ const Agent = artifacts.require('Agent')
 const Voting = artifacts.require('Voting')
 const TokenWrapper = artifacts.require('TokenWrapper')
 const ERC20 = artifacts.require('ERC20Sample')
+const MultiSigMock = artifacts.require('MultiSigMock')
 const MiniMeToken = artifacts.require('MiniMeToken')
 const PublicResolver = artifacts.require('PublicResolver')
 const EVMScriptRegistry = artifacts.require('EVMScriptRegistry')
@@ -28,7 +29,7 @@ const THIRTY_DAYS = ONE_DAY * 30
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 
 contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
-  let daoID, template, dao, acl, ens
+  let daoID, template, dao, acl, ens, dclMultiSig
   let voting, tokenWrapper, agent
   let mana, token
 
@@ -44,6 +45,10 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
     mana = await ERC20.new({ from: holder }) // mints 1e18 tokens to sender
   })
 
+  before('simulate dclMultiSig', async () => {
+    dclMultiSig = await MultiSigMock.new()
+  })
+
   before('fetch template and ENS', async () => {
     const { registry, address } = await deployedAddresses()
     ens = ENS.at(registry)
@@ -54,7 +59,7 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
     context('when a token was not created before creating the instance', () => {
       it('reverts', async () => {
         await assertRevert(
-          template.newInstance(randomId(), mana.address, VOTING_SETTINGS),
+          template.newInstance(randomId(), mana.address, dclMultiSig.address, VOTING_SETTINGS),
           'TEMPLATE_MISSING_TOKEN_CACHE'
         )
       })
@@ -67,15 +72,22 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
 
       it('revertes when using an invalid id', async () => {
         await assertRevert(
-          template.newInstance('', mana.address, VOTING_SETTINGS),
+          template.newInstance('', mana.address, dclMultiSig.address, VOTING_SETTINGS),
           'TEMPLATE_INVALID_ID'
         )
       })
 
       it('reverts when using an invalid mana token address', async () => {
         await assertRevert(
-          template.newInstance(randomId(), someone, VOTING_SETTINGS, { from: owner }),
+          template.newInstance(randomId(), someone, dclMultiSig.address, VOTING_SETTINGS, { from: owner }),
           'DECENTRALAND_BAD_MANA_TOKEN'
+        )
+      })
+
+      it('reverts when using an invalid dclMultiSig', async () => {
+        await assertRevert(
+          template.newInstance(randomId(), mana.address, someone, VOTING_SETTINGS, { from: owner }),
+          'DECENTRALAND_BAD_MULTISIG'
         )
       })
     })
@@ -92,7 +104,7 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
       daoID = randomId()
 
       tokenReceipt = await template.newToken(TOKEN_NAME, TOKEN_SYMBOL, { from: owner })
-      instanceReceipt = await template.newInstance(daoID, mana.address, VOTING_SETTINGS, { from: owner })
+      instanceReceipt = await template.newInstance(daoID, mana.address, dclMultiSig.address, VOTING_SETTINGS, { from: owner })
 
       dao = Kernel.at(getEventArgument(instanceReceipt, 'DeployDao', 'dao'))
       token = MiniMeToken.at(getEventArgument(tokenReceipt, 'DeployToken', 'token'))
@@ -127,8 +139,8 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
     })
 
     it('sets up DAO and ACL permissions correctly', async () => {
-      await assertRole(acl, dao, voting, 'APP_MANAGER_ROLE')
-      await assertRole(acl, acl, voting, 'CREATE_PERMISSIONS_ROLE')
+      await assertRole(acl, dao, dclMultiSig, 'APP_MANAGER_ROLE')
+      await assertRole(acl, acl, dclMultiSig, 'CREATE_PERMISSIONS_ROLE')
     })
 
     it('sets up EVM scripts registry permissions correctly', async () => {
@@ -155,9 +167,9 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
       assert.equal((await voting.voteTime()).toString(), VOTE_DURATION)
       assert.equal((await voting.votesLength()).toNumber(), 0, `no vote should exist`)
 
-      await assertRole(acl, voting, voting, 'CREATE_VOTES_ROLE', tokenWrapper)
-      await assertRole(acl, voting, voting, 'MODIFY_QUORUM_ROLE')
-      await assertRole(acl, voting, voting, 'MODIFY_SUPPORT_ROLE')
+      await assertRole(acl, voting, dclMultiSig, 'CREATE_VOTES_ROLE', tokenWrapper)
+      await assertRole(acl, voting, dclMultiSig, 'MODIFY_QUORUM_ROLE', voting)
+      await assertRole(acl, voting, dclMultiSig, 'MODIFY_SUPPORT_ROLE', voting)
     })
 
     it('should have agent app correctly setup', async () => {
@@ -167,8 +179,10 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
       assert.equal(await dao.recoveryVaultAppId(), APP_IDS.agent, 'agent app is not being used as the vault app of the DAO')
       assert.equal(web3.toChecksumAddress(await dao.getRecoveryVault()), agent.address, 'agent app is not being used as the vault app of the DAO')
 
-      await assertRole(acl, agent, voting, 'EXECUTE_ROLE')
-      await assertRole(acl, agent, voting, 'RUN_SCRIPT_ROLE')
+      await assertRole(acl, agent, dclMultiSig, 'EXECUTE_ROLE')
+      await assertRole(acl, agent, dclMultiSig, 'RUN_SCRIPT_ROLE')
+      await assertRole(acl, agent, dclMultiSig, 'EXECUTE_ROLE', voting)
+      await assertRole(acl, agent, dclMultiSig, 'RUN_SCRIPT_ROLE', voting)
 
       await assertMissingRole(acl, agent, 'DESIGNATE_SIGNER_ROLE')
       await assertMissingRole(acl, agent, 'ADD_PRESIGNED_HASH_ROLE')
