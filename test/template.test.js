@@ -219,7 +219,7 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
     })
 
     describe('when creating votes', () => {
-      let holderBalance, voteCreationReceipt
+      let holderBalance
 
       before('check holder token balance', async () => {
         holderBalance = (await token.balanceOf(holder)).toNumber()
@@ -229,7 +229,7 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
       before('forward a script that creates a vote via the token wrapper', async () => {
         const action = { to: voting.address, calldata: voting.contract.newVote.getData(EMPTY_SCRIPT, 'Vote metadata') }
         const script = encodeCallScript([action])
-        voteCreationReceipt = await tokenWrapper.forward(script, { from: holder })
+        await tokenWrapper.forward(script, { from: holder })
       })
 
       it('creates a vote', async () => {
