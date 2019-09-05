@@ -7,8 +7,6 @@ import "@aragon/token-wrapper/contracts/TokenWrapper.sol";
 
 
 contract DecentralandTemplate is BaseTemplate, TokenCache {
-    bytes32 constant internal TOKEN_WRAPPER_APP_ID = 0x84fda9a3c8655fa3cc349a8375729741fc6f4cacca230ed8bfb04b38e833a961;
-
     string constant private ERROR_BAD_VOTE_SETTINGS = "DECENTRALAND_BAD_VOTE_SETTINGS";
     string constant private ERROR_BAD_MANA_TOKEN = "DECENTRALAND_BAD_MANA_TOKEN";
     string constant private ERROR_BAD_MULTISIG = "DECENTRALAND_BAD_MULTISIG";
@@ -31,32 +29,32 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
         return token;
     }
 
-    function newInstance(string memory _id, ERC20 _mana, address _dclMultiSig, uint64[3] memory _votingSettings) public {
+    function newInstance(string memory _id, ERC20 _mana, address _dclMultiSig, uint64[3] memory _votingSettings, bytes32 _tokenWrapperNameHash) public {
         _validateId(_id);
         _validateVotingSettings(_votingSettings);
         _validateManaToken(_mana);
         _validateMultiSig(_dclMultiSig);
 
         (Kernel dao, ACL acl) = _createDAO();
-        Voting voting = _setupApps(dao, acl, _mana, _dclMultiSig, _votingSettings);
+        Voting voting = _setupApps(dao, acl, _mana, _dclMultiSig, _votingSettings, _tokenWrapperNameHash);
 
         _transferRootPermissionsFromTemplateAndFinalizeDAO(dao, _dclMultiSig);
         _registerID(_id, dao);
     }
 
-    function _setupApps(Kernel _dao, ACL _acl, ERC20 _mana, address _dclMultiSig, uint64[3] memory _votingSettings) internal returns (Voting) {
+    function _setupApps(Kernel _dao, ACL _acl, ERC20 _mana, address _dclMultiSig, uint64[3] memory _votingSettings, bytes32 _tokenWrapperNameHash) internal returns (Voting) {
         MiniMeToken token = _popTokenCache(msg.sender);
         Agent agent = _installDefaultAgentApp(_dao);
         Voting voting = _installVotingApp(_dao, token, _votingSettings);
-        TokenWrapper tokenWrapper = _installTokenWrapperApp(_dao, token, _mana);
+        TokenWrapper tokenWrapper = _installTokenWrapperApp(_dao, token, _mana, _tokenWrapperNameHash);
 
         _setupPermissions(_acl, agent, voting, tokenWrapper, _dclMultiSig);
 
         return voting;
     }
 
-    function _installTokenWrapperApp(Kernel _dao, MiniMeToken _token, ERC20 _mana) internal returns (TokenWrapper) {
-        TokenWrapper tokenWrapper = TokenWrapper(_installNonDefaultApp(_dao, TOKEN_WRAPPER_APP_ID));
+    function _installTokenWrapperApp(Kernel _dao, MiniMeToken _token, ERC20 _mana, bytes32 _tokenWrapperNameHash) internal returns (TokenWrapper) {
+        TokenWrapper tokenWrapper = TokenWrapper(_installNonDefaultApp(_dao, _tokenWrapperNameHash));
         _token.changeController(tokenWrapper);
         tokenWrapper.initialize(_token, _mana);
         return tokenWrapper;

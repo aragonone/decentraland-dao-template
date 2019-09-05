@@ -32,6 +32,7 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
   let daoID, template, dao, acl, ens, dclMultiSig
   let voting, tokenWrapper, agent
   let mana, token
+  let tokenWrapperNameHash
 
   const TOKEN_NAME = 'Decentraland Token'
   const TOKEN_SYMBOL = 'DCL'
@@ -55,11 +56,15 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
     template = DecentralandTemplate.at(address)
   })
 
+  before('prepare token-wrapper namehash', async () => {
+      tokenWrapperNameHash = namehash('token-wrapper.aragonpm.eth')
+  })
+
   describe('when the creation fails', () => {
     context('when a token was not created before creating the instance', () => {
       it('reverts', async () => {
         await assertRevert(
-          template.newInstance(randomId(), mana.address, dclMultiSig.address, VOTING_SETTINGS),
+          template.newInstance(randomId(), mana.address, dclMultiSig.address, VOTING_SETTINGS, tokenWrapperNameHash),
           'TEMPLATE_MISSING_TOKEN_CACHE'
         )
       })
@@ -72,21 +77,21 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
 
       it('revertes when using an invalid id', async () => {
         await assertRevert(
-          template.newInstance('', mana.address, dclMultiSig.address, VOTING_SETTINGS),
+          template.newInstance('', mana.address, dclMultiSig.address, VOTING_SETTINGS, tokenWrapperNameHash),
           'TEMPLATE_INVALID_ID'
         )
       })
 
       it('reverts when using an invalid mana token address', async () => {
         await assertRevert(
-          template.newInstance(randomId(), someone, dclMultiSig.address, VOTING_SETTINGS, { from: owner }),
+          template.newInstance(randomId(), someone, dclMultiSig.address, VOTING_SETTINGS, tokenWrapperNameHash),
           'DECENTRALAND_BAD_MANA_TOKEN'
         )
       })
 
       it('reverts when using an invalid dclMultiSig', async () => {
         await assertRevert(
-          template.newInstance(randomId(), mana.address, someone, VOTING_SETTINGS, { from: owner }),
+          template.newInstance(randomId(), mana.address, someone, VOTING_SETTINGS, tokenWrapperNameHash),
           'DECENTRALAND_BAD_MULTISIG'
         )
       })
@@ -104,14 +109,14 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
       daoID = randomId()
 
       tokenReceipt = await template.newToken(TOKEN_NAME, TOKEN_SYMBOL, { from: owner })
-      instanceReceipt = await template.newInstance(daoID, mana.address, dclMultiSig.address, VOTING_SETTINGS, { from: owner })
+      instanceReceipt = await template.newInstance(daoID, mana.address, dclMultiSig.address, VOTING_SETTINGS, tokenWrapperNameHash, { from: owner })
 
       dao = Kernel.at(getEventArgument(instanceReceipt, 'DeployDao', 'dao'))
       token = MiniMeToken.at(getEventArgument(tokenReceipt, 'DeployToken', 'token'))
       acl = ACL.at(await dao.acl())
 
       const installedApps = getInstalledAppsById(instanceReceipt)
-      installedApps['token-wrapper'] = getInstalledApps(instanceReceipt, namehash('token-wrapper.aragonpm.eth'))
+      installedApps['token-wrapper'] = getInstalledApps(instanceReceipt, tokenWrapperNameHash)
 
       assert.equal(dao.address, getEventArgument(instanceReceipt, 'SetupDao', 'dao'), 'should have emitted a SetupDao event')
 
