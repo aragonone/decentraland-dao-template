@@ -9,7 +9,8 @@ import "@aragon/token-wrapper/contracts/TokenWrapper.sol";
 contract DecentralandTemplate is BaseTemplate, TokenCache {
     bytes32 constant internal TOKEN_WRAPPER_APP_ID = 0x84fda9a3c8655fa3cc349a8375729741fc6f4cacca230ed8bfb04b38e833a961;
 
-    string constant private ERROR_BAD_VOTE_SETTINGS = "COMPANY_BAD_VOTE_SETTINGS";
+    string constant private ERROR_BAD_VOTE_SETTINGS = "DECENTRALAND_BAD_VOTE_SETTINGS";
+    string constant private ERROR_BAD_MANA_TOKEN = "DECENTRALAND_BAD_MANA_TOKEN";
 
     bool constant private TOKEN_TRANSFERABLE = false;
     uint8 constant private TOKEN_DECIMALS = uint8(18);
@@ -30,9 +31,9 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
     }
 
     function newInstance(string memory _id, ERC20 _mana, uint64[3] memory _votingSettings) public {
-        // TODO: Uncomment when updated to @aragon/templates-shared 1.0.0-rc.2
-        // _validateId(_id);
+        _validateId(_id);
         _validateVotingSettings(_votingSettings);
+        _validateManaToken(_mana);
 
         (Kernel dao, ACL acl) = _createDAO();
         Voting voting = _setupApps(dao, acl, _mana, _votingSettings);
@@ -63,6 +64,10 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
         _token.changeController(tokenWrapper);
         tokenWrapper.initialize(_token, _mana);
         return tokenWrapper;
+    }
+
+    function _validateManaToken(ERC20 _mana) internal {
+        require(isContract(_mana), ERROR_BAD_MANA_TOKEN);
     }
 
     function _validateVotingSettings(uint64[3] memory _votingSettings) internal {

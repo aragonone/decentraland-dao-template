@@ -7,7 +7,7 @@ const { getEventArgument } = require('@aragon/test-helpers/events')
 const { deployedAddresses } = require('@aragon/templates-shared/lib/arapp-file')(web3)
 const { getInstalledApps, getInstalledAppsById } = require('@aragon/templates-shared/helpers/events')(artifacts)
 const { assertRole, assertMissingRole } = require('@aragon/templates-shared/helpers/assertRole')(web3)
-const { EMPTY_SCRIPT } = require('@aragon/test-helpers/evmScript')
+const { EMPTY_SCRIPT, encodeCallScript } = require('@aragon/test-helpers/evmScript')
 
 const DecentralandTemplate = artifacts.require('DecentralandTemplate')
 
@@ -50,19 +50,45 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
     template = DecentralandTemplate.at(address)
   })
 
-  // TODO
-  context('when the creation fails', () => {
-    context('a token was not created before creating the instance', () => {})
+  describe('when the creation fails', () => {
+    context('when a token was not created before creating the instance', () => {
+      it('reverts', async () => {
+        await assertRevert(
+          template.newInstance(randomId(), mana.address, VOTING_SETTINGS),
+          'TEMPLATE_MISSING_TOKEN_CACHE'
+        )
+      })
+    })
+
+    context('when a token was previously created', () => {
+      before('create token', async () => {
+        await template.newToken(TOKEN_NAME, TOKEN_SYMBOL, { from: owner })
+      })
+
+      it('revertes when using an invalid id', async () => {
+        await assertRevert(
+          template.newInstance('', mana.address, VOTING_SETTINGS),
+          'TEMPLATE_INVALID_ID'
+        )
+      })
+
+      it('reverts when using an invalid mana token address', async () => {
+        await assertRevert(
+          template.newInstance(randomId(), someone, VOTING_SETTINGS, { from: owner }),
+          'DECENTRALAND_BAD_MANA_TOKEN'
+        )
+      })
+    })
   })
 
-  context('when the creation succeeds', () => {
+  describe('when the creation succeeds', () => {
     let tokenReceipt, instanceReceipt
 
     const expectedDaoCreationCost = 5e6
     const expectedTokenCreationCost = 1.8e6
     const expectedTotalCost = expectedTokenCreationCost + expectedDaoCreationCost
 
-    before('create entity', async () => {
+    before('create token and entity', async () => {
       daoID = randomId()
 
       tokenReceipt = await template.newToken(TOKEN_NAME, TOKEN_SYMBOL, { from: owner })
@@ -127,6 +153,7 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
       assert.equal((await voting.supportRequiredPct()).toString(), SUPPORT_REQUIRED)
       assert.equal((await voting.minAcceptQuorumPct()).toString(), MIN_ACCEPTANCE_QUORUM)
       assert.equal((await voting.voteTime()).toString(), VOTE_DURATION)
+      assert.equal((await voting.votesLength()).toNumber(), 0, `no vote should exist`)
 
       await assertRole(acl, voting, voting, 'CREATE_VOTES_ROLE', tokenWrapper)
       await assertRole(acl, voting, voting, 'MODIFY_QUORUM_ROLE')
@@ -191,24 +218,34 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
       await assertRevert(token.approve(someone, 1e16, { from: holder }))
     })
 
-    describe.skip('when creating votes', () => {
-      let holderBalance
+    describe('when creating votes', () => {
+      let holderBalance, voteCreationReceipt
 
       before('check holder token balance', async () => {
         holderBalance = (await token.balanceOf(holder)).toNumber()
         assert.equal(holderBalance > 0, true, `holder has no token balance`)
       })
 
-      before('create a vote', async () => {
-        // await voting.newVote(EMPTY_SCRIPT, 'Vote metadata', { from: holder })
-        await voting.forward(EMPTY_SCRIPT, { from: holder })
+      before('forward a script that creates a vote via the token wrapper', async () => {
+        const action = { to: voting.address, calldata: voting.contract.newVote.getData(EMPTY_SCRIPT, 'Vote metadata') }
+        const script = encodeCallScript([action])
+        voteCreationReceipt = await tokenWrapper.forward(script, { from: holder })
+      })
+
+      it('creates a vote', async () => {
         assert.equal((await voting.votesLength()).toNumber(), 1, `a vote should exist`)
       })
 
-      it('description', async () => {
+      it('does not allow a non holder to vote', async () => {
+        await assertRevert(
+          voting.vote(0, true, false, { from: someone }),
+          'VOTING_CAN_NOT_VOTE'
+        )
       })
 
-      // TODO: vote tests
+      it('allows a token holder to vote', async () => {
+        await voting.vote(0, true, false, { from: holder })
+      })
     })
   })
 })
