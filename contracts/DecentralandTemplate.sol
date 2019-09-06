@@ -50,6 +50,21 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
         _registerID(_id, dao);
     }
 
+    function newTokenAndInstance(
+        string memory _tokenName,
+        string memory _tokenSymbol,
+        string memory _id,
+        ERC20 _mana,
+        address _dclMultiSig,
+        uint64[3] memory _votingSettings,
+        bytes32 _tokenWrapperNameHash
+    )
+        public
+    {
+        newToken(_tokenName, _tokenSymbol);
+        newInstance(_id, _mana, _dclMultiSig, _votingSettings, _tokenWrapperNameHash);
+    }
+
     function _setupApps(
         Kernel _dao,
         ACL _acl,

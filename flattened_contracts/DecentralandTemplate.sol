@@ -7891,7 +7891,15 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
         return token;
     }
 
-    function newInstance(string memory _id, ERC20 _mana, address _dclMultiSig, uint64[3] memory _votingSettings, bytes32 _tokenWrapperNameHash) public {
+    function newInstance(
+        string memory _id,
+        ERC20 _mana,
+        address _dclMultiSig,
+        uint64[3] memory _votingSettings,
+        bytes32 _tokenWrapperNameHash
+    )
+        public
+    {
         _validateId(_id);
         _validateVotingSettings(_votingSettings);
         _validateManaToken(_mana);
@@ -7904,7 +7912,31 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
         _registerID(_id, dao);
     }
 
-    function _setupApps(Kernel _dao, ACL _acl, ERC20 _mana, address _dclMultiSig, uint64[3] memory _votingSettings, bytes32 _tokenWrapperNameHash) internal returns (Voting) {
+    function newTokenAndInstance(
+        string memory _tokenName,
+        string memory _tokenSymbol,
+        string memory _id,
+        ERC20 _mana,
+        address _dclMultiSig,
+        uint64[3] memory _votingSettings,
+        bytes32 _tokenWrapperNameHash
+    )
+        public
+    {
+        newToken(_tokenName, _tokenSymbol);
+        newInstance(_id, _mana, _dclMultiSig, _votingSettings, _tokenWrapperNameHash);
+    }
+
+    function _setupApps(
+        Kernel _dao,
+        ACL _acl,
+        ERC20 _mana,
+        address _dclMultiSig,
+        uint64[3] memory _votingSettings,
+        bytes32 _tokenWrapperNameHash
+    )
+        internal returns (Voting)
+    {
         MiniMeToken token = _popTokenCache(msg.sender);
         Agent agent = _installDefaultAgentApp(_dao);
         Voting voting = _installVotingApp(_dao, token, _votingSettings);
@@ -7915,7 +7947,14 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
         return voting;
     }
 
-    function _installTokenWrapperApp(Kernel _dao, MiniMeToken _token, ERC20 _mana, bytes32 _tokenWrapperNameHash) internal returns (TokenWrapper) {
+    function _installTokenWrapperApp(
+        Kernel _dao,
+        MiniMeToken _token,
+        ERC20 _mana,
+        bytes32 _tokenWrapperNameHash
+    )
+        internal returns (TokenWrapper)
+    {
         TokenWrapper tokenWrapper = TokenWrapper(_installNonDefaultApp(_dao, _tokenWrapperNameHash));
         _token.changeController(tokenWrapper);
         tokenWrapper.initialize(_token, _mana);
