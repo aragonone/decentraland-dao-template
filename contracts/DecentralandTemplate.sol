@@ -3,6 +3,8 @@ pragma solidity 0.4.24;
 import "@aragon/templates-shared/contracts/TokenCache.sol";
 import "@aragon/templates-shared/contracts/BaseTemplate.sol";
 
+import "@aragon/os/contracts/lib/token/ERC20.sol";
+
 import "@aragon/token-wrapper/contracts/TokenWrapper.sol";
 
 
