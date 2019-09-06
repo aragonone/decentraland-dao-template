@@ -19,6 +19,7 @@
     "url": "https://github.com/aragonone/decentraland-dao-template/issues"
   },
   "scripts": {
+    "lint": "solium --dir ./contracts",
     "compile": "truffle compile --all",
     "test": "npm run test:ganache",
     "test:ganache": "./node_modules/@aragon/templates-shared/scripts/test-ganache.sh",
@@ -31,6 +32,7 @@
   },
   "devDependencies": {
     "truffle": "4.1.14",
+    "solium": "^1.0.4",
     "@aragon/test-helpers": "^2.0.0",
     "eth-ens-namehash": "^2.0.8",
     "web3-eth-abi": "^1.2.0"
