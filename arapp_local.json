@@ -1,0 +1,11 @@
+{
+  "environments": {
+    "rpc": {
+      "appName": "decentraland-template.aragonpm.eth",
+      "address": "0xf1660609db6792364a5d4e08210883994ff8548b",
+      "network": "rpc",
+      "registry": "0xface85822e867e7f16885a83eea8f8c60cf5a314"
+    }
+  },
+  "path": "contracts/DecentralandTemplate.sol"
+}
