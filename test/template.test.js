@@ -1,3 +1,5 @@
+/* global contract artifacts web3 assert */
+
 const assertRevert = require('@aragon/templates-shared/helpers/assertRevert')(web3)
 
 const { hash: namehash } = require('eth-ens-namehash')
@@ -25,10 +27,9 @@ const EVMScriptRegistry = artifacts.require('EVMScriptRegistry')
 
 const ONE_DAY = 60 * 60 * 24
 const ONE_WEEK = ONE_DAY * 7
-const THIRTY_DAYS = ONE_DAY * 30
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 
-contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
+contract('DecentralandTemplate', ([owner, holder, someone]) => {
   let daoID, template, dao, acl, ens, dclMultiSig
   let voting, tokenWrapper, agent
   let mana, token
@@ -94,7 +95,7 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
       assert.equal((await voting.supportRequiredPct()).toString(), SUPPORT_REQUIRED)
       assert.equal((await voting.minAcceptQuorumPct()).toString(), MIN_ACCEPTANCE_QUORUM)
       assert.equal((await voting.voteTime()).toString(), VOTE_DURATION)
-      assert.equal((await voting.votesLength()).toNumber(), 0, `no vote should exist`)
+      assert.equal((await voting.votesLength()).toNumber(), 0, 'no vote should exist')
 
       await assertRole(acl, voting, dclMultiSig, 'CREATE_VOTES_ROLE', tokenWrapper)
       await assertRole(acl, voting, dclMultiSig, 'MODIFY_QUORUM_ROLE', voting)
@@ -169,7 +170,7 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
 
         before('check holder token balance', async () => {
           holderBalance = (await token.balanceOf(holder)).toNumber()
-          assert.equal(holderBalance > 0, true, `holder has no token balance`)
+          assert.equal(holderBalance > 0, true, 'holder has no token balance')
         })
 
         before('forward a script that creates a vote via the token wrapper', async () => {
@@ -179,7 +180,7 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
         })
 
         it('creates a vote', async () => {
-          assert.equal((await voting.votesLength()).toNumber(), 1, `a vote should exist`)
+          assert.equal((await voting.votesLength()).toNumber(), 1, 'a vote should exist')
         })
 
         it('does not allow a non holder to vote', async () => {
@@ -213,7 +214,7 @@ contract('DecentralandTemplate', ([_, owner, holder, someone]) => {
   })
 
   before('prepare token-wrapper namehash', async () => {
-      tokenWrapperNameHash = namehash('token-wrapper.aragonpm.eth')
+    tokenWrapperNameHash = namehash('token-wrapper.aragonpm.eth')
   })
 
   context('when creating instances with separate transactions', () => {

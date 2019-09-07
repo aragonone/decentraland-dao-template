@@ -26,9 +26,9 @@
     "test:ganache": "./node_modules/@aragon/templates-shared/scripts/test-ganache.sh",
     "deploy:rpc": "npm run compile && truffle exec ./scripts/deploy.js --network rpc",
     "deploy:devnet": "npm run compile && truffle exec ./scripts/deploy.js --network devnet",
-    "deploy:staging": "npm run compile && truffle exec ./scripts/deploy.js --network rinkeby --ens 0xfe03625ea880a8cba336f9b5ad6e15b0a3b5a939 --dao-factory 0xbca2c99aa7018edcde60e6c5744f68003112535d --mini-me-factory 0xac443f983c38c02149ce2ffcff8b7de90dccf77c",
     "deploy:rinkeby": "npm run compile && truffle exec ./scripts/deploy.js --network rinkeby --ens 0x98Df287B6C145399Aaa709692c8D308357bC085D --dao-factory 0xfdef49fbfe37704af55636bdd4b6bc8cd19143f6 --mini-me-factory 0x6ffeb4038f7f077c4d20eaf1706980caec31e2bf",
     "deploy:ropsten": "npm run compile && truffle exec ./scripts/deploy.js --network ropsten --ens 0x6afe2cacee211ea9179992f89dc61ff25c61e923 --dao-factory 0x3f2aa9dd22e97070518ba7988fe9b8724129d497 --mini-me-factory 0x1ce5621d386b2801f5600f1dbe29522805b8ac11",
+    "deploy:staging": "npm run compile && truffle exec ./scripts/deploy.js --network rinkeby --ens 0xfe03625ea880a8cba336f9b5ad6e15b0a3b5a939 --dao-factory 0xbca2c99aa7018edcde60e6c5744f68003112535d --mini-me-factory 0xac443f983c38c02149ce2ffcff8b7de90dccf77c",
     "deploy:mainnet": "npm run compile && truffle exec ./scripts/deploy.js --network mainnet --ens 0x314159265dd8dbb310642f98f50c066173c1259b --dao-factory 0xc29f0599df12eb4cbe1a34354c4bac6d944071d1 --mini-me-factory 0x909d05f384d0663ed4be59863815ab43b4f347ec",
     "publish:rpc": "aragon apm publish major $(npm run deploy:rpc | tail -n 1) --environment default",
     "publish:devnet": "aragon apm publish major $(npm run deploy:devnet | tail -n 1) --environment default",
@@ -43,11 +43,12 @@
     "@aragon/token-wrapper": "github:aragonone/token-wrapper"
   },
   "devDependencies": {
-    "truffle": "4.1.14",
-    "solium": "^1.0.4",
     "@aragon/test-helpers": "^2.0.0",
+    "eslint": "^5.16.0",
     "eth-ens-namehash": "^2.0.8",
     "ganache-cli": "^6.0.3",
+    "solium": "^1.0.4",
+    "truffle": "4.1.14",
     "web3-eth-abi": "^1.2.0"
   }
 }
