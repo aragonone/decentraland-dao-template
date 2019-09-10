@@ -22,6 +22,7 @@
     "lint": "solium --dir ./contracts",
     "compile": "truffle compile --all",
     "test": "npm run test:ganache",
+    "lock": "truffle exec ./scripts/lock.js --network rinkeby",
     "ganache:rpc": "ganache-cli -i 15 -l 8000000 -a 200 -e 100000 -p 8545",
     "test:ganache": "./node_modules/@aragon/templates-shared/scripts/test-ganache.sh",
     "deploy:rpc": "npm run compile && truffle exec ./scripts/deploy.js --network rpc",
