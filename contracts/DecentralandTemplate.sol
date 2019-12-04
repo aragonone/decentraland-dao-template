@@ -105,9 +105,10 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
         _createCustomAgentPermissions(_acl, _agent, _voting, _dclMultiSig);
         _createEvmScriptsRegistryPermissions(_acl, _voting, _voting);
         _createVotingPermissions(_acl, _voting, _voting, _tokenWrapper, _dclMultiSig);
-        
+
         // HACK: create a random permission on TokenWrapper so it is detected as an app
-        _acl.createPermission(address(-1), _tokenWrapper, bytes32(-1), address(1));
+        // Set the manager to the multisig in case they ever want to uninstall it
+        _acl.createPermission(address(-1), _tokenWrapper, bytes32(-1), _dclMultiSig);
     }
 
     function _createCustomAgentPermissions(ACL _acl, Agent _agent, Voting _voting, address _dclMultiSig) internal {
