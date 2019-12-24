@@ -1,0 +1,11 @@
+{
+  "environments": {
+    "rinkeby": {
+      "appName": "decentraland-template.aragonpm.eth",
+      "address": "0x0a390f870e1365eb18732208be142968f04b1216",
+      "network": "rinkeby",
+      "registry": "0x98Df287B6C145399Aaa709692c8D308357bC085D"
+    }
+  },
+  "path": "contracts/DecentralandTemplate.sol"
+}
