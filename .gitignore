@@ -1,3 +1,11 @@
-node_modules/
-build/
-flattened_contracts/
+# Dependencies
+node_modules
+
+# lock files
+yarn.lock
+package-lock.json
+
+# truffle build artifacts
+abi
+build
+flattened_contracts
