@@ -8,7 +8,8 @@ const CONTRACT_NAME = 'DecentralandTemplate'
 
 const apps = [
   ...APPS,
-  { name: 'token-wrapper', contractName: 'TokenWrapper' }
+  { name: 'token-wrapper', contractName: 'TokenWrapper' },
+  { name: 'voting-aggregator', contractName: 'VotingAggregator' }
 ]
 
 module.exports = callback => {

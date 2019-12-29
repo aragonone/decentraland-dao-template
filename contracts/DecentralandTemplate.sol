@@ -1,21 +1,46 @@
 pragma solidity 0.4.24;
 
-import "@aragon/templates-shared/contracts/TokenCache.sol";
 import "@aragon/templates-shared/contracts/BaseTemplate.sol";
 
 import "@aragon/os/contracts/lib/token/ERC20.sol";
 
-import "@aragon/token-wrapper/contracts/TokenWrapper.sol";
+import "@aragon/apps-agent/contracts/Agent.sol";
+import "@aragon/apps-token-manager/contracts/TokenManager.sol";
+import "@aragon/apps-voting/contracts/Voting.sol";
+import "@aragon/apps-shared-minime/contracts/MiniMeToken.sol";
+
+import "@aragonone/apps-token-wrapper/contracts/TokenWrapper.sol";
+import "@aragonone/apps-voting-aggregator/contracts/VotingAggregator.sol";
 
 
-contract DecentralandTemplate is BaseTemplate, TokenCache {
+contract DecentralandTemplate is BaseTemplate {
+    string constant private ERROR_MISSING_CACHE = "DECENTRALAND_MISSING_CACHE";
+    string constant private ERROR_BAD_EXTERNAL_TOKEN = "DECENTRALAND_BAD_EXTERNAL_TOKEN";
+    string constant private ERROR_MISSING_SAB_MEMBERS = "DECENTRALAND_MISSING_SAB_MEMBERS";
     string constant private ERROR_BAD_VOTE_SETTINGS = "DECENTRALAND_BAD_VOTE_SETTINGS";
-    string constant private ERROR_BAD_MANA_TOKEN = "DECENTRALAND_BAD_MANA_TOKEN";
-    string constant private ERROR_BAD_MULTISIG = "DECENTRALAND_BAD_MULTISIG";
 
-    bool constant private TOKEN_TRANSFERABLE = false;
-    uint8 constant private TOKEN_DECIMALS = uint8(18);
-    uint256 constant private TOKEN_MAX_PER_ACCOUNT = uint256(0);
+    /* Hardcoded constant to save gas
+    * bytes32 constant internal TOKEN_WRAPPER_APP_ID = namehash("token-wrapper.hatch.aragonpm.eth");
+    * bytes32 constant internal VOTING_AGGREGATOR_APP_ID = namehash('voting-aggregator.hatch.aragonpm.eth");
+    */
+    bytes32 constant private TOKEN_WRAPPER_APP_ID = 0xdab7adb04b01d9a3f85331236b5ce8f5fdc5eecb1eebefb6129bc7ace10de7bd;
+    bytes32 constant private VOTING_AGGREGATOR_APP_ID = 0x818d8ea9df3dca764232c22548318a98f82f388b760b4b5abe80a4b40f9b2076;
+
+    // Hardcoded settings
+    uint8 constant private AGGREGATOR_DECIMALS = uint8(18);
+    string constant private SAB_TOKEN_NAME = "Security Advisory Board Token";
+    string constant private SAB_TOKEN_SYMBOL = "SAB";
+    uint8 constant private SAB_TOKEN_DECIMALS = uint8(0);
+    uint256 constant private SAB_TOKEN_MAX_PER_ACCOUNT = uint256(1);
+    bool constant private SAB_TOKEN_TRANSFERABLE = false;
+
+    struct Cache {
+        address dao;
+        address tokenWrapper;
+        address votingAggregator;
+    }
+
+    mapping (address => Cache) internal cache;
 
     constructor(DAOFactory _daoFactory, ENS _ens, MiniMeTokenFactory _miniMeFactory, IFIFSResolvingRegistrar _aragonID)
         BaseTemplate(_daoFactory, _ens, _miniMeFactory, _aragonID)
@@ -25,112 +50,251 @@ contract DecentralandTemplate is BaseTemplate, TokenCache {
         _ensureMiniMeFactoryIsValid(_miniMeFactory);
     }
 
-    function newToken(string memory _name, string memory _symbol) public returns (MiniMeToken) {
-        MiniMeToken token = _createToken(_name, _symbol, TOKEN_DECIMALS);
-        _cacheToken(token, msg.sender);
-        return token;
+    /**
+    * @dev Create an incomplete DAO with its token connectors in place and cache it for later setup steps
+    * @param _manaToWrap Address of external MANA token to wrap
+    * @param _wrappedTokenName String to use as the name of the wrapped MANA token
+    * @param _wrappedTokenSymbol String to use as the symbol of the wrapped MANA token
+    * @param _aggregateTokenName String to use as the name of the aggregated voting token
+    * @param _aggregateTokenSymbol String to use as the symbol of the aggregated voting token
+    */
+    function prepareInstanceWithVotingConnectors(
+        ERC20 _manaToWrap,
+        string _wrappedTokenName,
+        string _wrappedTokenSymbol,
+        string _aggregateTokenName,
+        string _aggregateTokenSymbol
+    )
+        external
+    {
+        _validateExternalToken(_manaToWrap);
+
+        // Create organization
+        (Kernel dao, ACL acl) = _createDAO();
+
+        // Install community voting apps
+        TokenWrapper tokenWrapper = _installTokenWrapperApp(
+            dao,
+            _manaToWrap,
+            _wrappedTokenName,
+            _wrappedTokenSymbol
+        );
+        VotingAggregator votingAggregator = _installVotingAggregatorApp(
+            dao,
+            _aggregateTokenName,
+            _aggregateTokenSymbol
+        );
+        _setupVotingAggregator(acl, votingAggregator, tokenWrapper);
+
+        // Cache for next step
+        _cachePreparedInstance(dao, tokenWrapper, votingAggregator);
     }
 
-    function newInstance(
-        string memory _id,
-        ERC20 _mana,
-        address _dclMultiSig,
-        uint64[3] memory _votingSettings,
-        bytes32 _tokenWrapperNameHash
+    /**
+    * @dev Finalize a previously prepared DAO instance cached by the user
+    * @param _id String with the name for org, will assign `[id].aragonid.eth`
+    * @param _communityVotingSettings Array of [supportRequired, minAcceptanceQuorum, voteDuration] settings for the community Voting app
+    * @param _sabMembers Array of initial security advisory board member addresses
+    * @param _sabVotingSettings Array of [supportRequired, minAcceptanceQuorum, voteDuration] settings for the security advisory board Voting app
+    */
+    function finalizeInstance(
+        string _id,
+        uint64[3] _communityVotingSettings,
+        address[] _sabMembers,
+        uint64[3] _sabVotingSettings
     )
-        public
+        external
     {
         _validateId(_id);
-        _validateVotingSettings(_votingSettings);
-        _validateManaToken(_mana);
-        _validateMultiSig(_dclMultiSig);
+        _validateVotingSettings(_communityVotingSettings);
+        _validateSabMembers(_sabMembers);
+        _validateVotingSettings(_sabVotingSettings);
 
-        (Kernel dao, ACL acl) = _createDAO();
-        Voting voting = _setupApps(dao, acl, _mana, _dclMultiSig, _votingSettings, _tokenWrapperNameHash);
+        (Kernel dao, TokenWrapper tokenWrapper, VotingAggregator votingAggregator) = _popCache();
+        ACL acl = ACL(dao.acl());
 
-        _transferRootPermissionsFromTemplateAndFinalizeDAO(dao, _dclMultiSig);
+        // Install and set up apps
+        (TokenManager sabTokenManager, Voting sabVoting) = _setupSab(
+            dao,
+            acl,
+            _sabMembers,
+            _sabVotingSettings,
+            tokenWrapper,
+            votingAggregator
+        );
+        Voting communityVoting = _setupCommunityVoting(
+            dao,
+            acl,
+            _communityVotingSettings,
+            votingAggregator,
+            sabTokenManager,
+            sabVoting
+        );
+        _setupAgent(dao, acl, sabVoting, communityVoting);
+
+        // Finalize org
+        _transferRootPermissionsFromTemplateAndFinalizeDAO(dao, sabVoting);
         _registerID(_id, dao);
     }
 
-    function newTokenAndInstance(
-        string memory _tokenName,
-        string memory _tokenSymbol,
-        string memory _id,
-        ERC20 _mana,
-        address _dclMultiSig,
-        uint64[3] memory _votingSettings,
-        bytes32 _tokenWrapperNameHash
-    )
-        public
-    {
-        newToken(_tokenName, _tokenSymbol);
-        newInstance(_id, _mana, _dclMultiSig, _votingSettings, _tokenWrapperNameHash);
-    }
-
-    function _setupApps(
+    function _setupSab(
         Kernel _dao,
         ACL _acl,
-        ERC20 _mana,
-        address _dclMultiSig,
-        uint64[3] memory _votingSettings,
-        bytes32 _tokenWrapperNameHash
+        address[] memory _sabMembers,
+        uint64[3] memory _sabVotingSettings,
+        TokenWrapper _tokenWrapper,
+        VotingAggregator _votingAggregator
     )
-        internal returns (Voting)
+        internal
+        returns (TokenManager, Voting)
     {
-        MiniMeToken token = _popTokenCache(msg.sender);
+        // Install apps for security advisory board
+        MiniMeToken sabToken = _createToken(SAB_TOKEN_NAME, SAB_TOKEN_SYMBOL, SAB_TOKEN_DECIMALS);
+        Voting sabVoting = _installVotingApp(_dao, sabToken, _sabVotingSettings);
+        TokenManager sabTokenManager = _installTokenManagerApp(
+            _dao,
+            sabToken,
+            SAB_TOKEN_TRANSFERABLE,
+            SAB_TOKEN_MAX_PER_ACCOUNT
+        );
+        _mintTokens(_acl, sabTokenManager, _sabMembers, 1);
+
+        // Set permissions
+        // TokenManager's will be assigned later as its permissions will be granted to the community voting app
+        _createVotingPermissions(_acl, sabVoting, sabVoting, sabTokenManager, sabVoting);
+
+        // Give permissions on already installed apps to SAB
+        _createEvmScriptsRegistryPermissions(_acl, sabVoting, sabVoting);
+        _createVotingAggregatorPermissions(_acl, _votingAggregator, sabVoting, sabVoting);
+
+        // HACK: create a random permission on TokenWrapper so it is detected as an app
+        // Set the manager to the SAB in case it ever needs to be uninstalled
+        _acl.createPermission(address(-1), _tokenWrapper, bytes32(-1), sabVoting);
+
+        return (sabTokenManager, sabVoting);
+    }
+
+    function _setupCommunityVoting(
+        Kernel _dao,
+        ACL _acl,
+        uint64[3] memory _communityVotingSettings,
+        VotingAggregator _votingAggregator,
+        TokenManager _sabTokenManager,
+        Voting _sabVoting
+    )
+        internal
+        returns (Voting)
+    {
+        // Install community voting app using aggregator
+        Voting communityVoting = _installVotingApp(
+            _dao,
+            // Pretend that the Voting Aggregator is a MiniMe
+            MiniMeToken(_votingAggregator),
+            _communityVotingSettings
+        );
+
+        // Set permissions
+        _createVotingPermissions(_acl, communityVoting, _sabVoting, _votingAggregator, _sabVoting);
+        _createTokenManagerPermissions(_acl, _sabTokenManager, communityVoting, _sabVoting);
+
+        return communityVoting;
+    }
+
+    function _setupAgent(Kernel _dao, ACL _acl, Voting _sabVoting, Voting _communityVoting) internal {
         Agent agent = _installDefaultAgentApp(_dao);
-        Voting voting = _installVotingApp(_dao, token, _votingSettings);
-        TokenWrapper tokenWrapper = _installTokenWrapperApp(_dao, token, _mana, _tokenWrapperNameHash);
 
-        _setupPermissions(_acl, agent, voting, tokenWrapper, _dclMultiSig);
+        // Set permissions
+        bytes32 executeRole = agent.EXECUTE_ROLE();
+        bytes32 runScriptRole = agent.RUN_SCRIPT_ROLE();
 
-        return voting;
+        // Initially set this template as the manager so we can grant additional permissions
+        _acl.createPermission(_communityVoting, agent, executeRole, address(this));
+        _acl.createPermission(_communityVoting, agent, runScriptRole, address(this));
+
+        _acl.grantPermission(_sabVoting, agent, executeRole);
+        _acl.grantPermission(_sabVoting, agent, runScriptRole);
+
+        // Clean up permissions held by this template
+        _acl.setPermissionManager(_sabVoting, agent, executeRole);
+        _acl.setPermissionManager(_sabVoting, agent, runScriptRole);
     }
 
     function _installTokenWrapperApp(
         Kernel _dao,
-        MiniMeToken _token,
-        ERC20 _mana,
-        bytes32 _tokenWrapperNameHash
+        ERC20 _tokenToWrap,
+        string memory _wrappedTokenName,
+        string memory _wrappedTokenSymbol
     )
         internal returns (TokenWrapper)
     {
-        TokenWrapper tokenWrapper = TokenWrapper(_installNonDefaultApp(_dao, _tokenWrapperNameHash));
-        _token.changeController(tokenWrapper);
-        tokenWrapper.initialize(_token, _mana);
-        return tokenWrapper;
+        bytes memory initializeData = abi.encodeWithSelector(TokenWrapper(0).initialize.selector, _tokenToWrap, _wrappedTokenName, _wrappedTokenSymbol);
+        return TokenWrapper(_installNonDefaultApp(_dao, TOKEN_WRAPPER_APP_ID, initializeData));
     }
 
-    function _setupPermissions(ACL _acl, Agent _agent, Voting _voting, TokenWrapper _tokenWrapper, address _dclMultiSig) internal {
-        _createCustomAgentPermissions(_acl, _agent, _voting, _dclMultiSig);
-        _createEvmScriptsRegistryPermissions(_acl, _voting, _voting);
-        _createVotingPermissions(_acl, _voting, _voting, _tokenWrapper, _dclMultiSig);
-
-        // HACK: create a random permission on TokenWrapper so it is detected as an app
-        // Set the manager to the multisig in case they ever want to uninstall it
-        _acl.createPermission(address(-1), _tokenWrapper, bytes32(-1), _dclMultiSig);
+    function _installVotingAggregatorApp(
+        Kernel _dao,
+        string memory _aggregateTokenName,
+        string memory _aggregateTokenSymbol
+    )
+        internal returns (VotingAggregator)
+    {
+        bytes memory initializeData = abi.encodeWithSelector(VotingAggregator(0).initialize.selector, _aggregateTokenName, _aggregateTokenSymbol, AGGREGATOR_DECIMALS);
+        return VotingAggregator(_installNonDefaultApp(_dao, VOTING_AGGREGATOR_APP_ID, initializeData));
     }
 
-    function _createCustomAgentPermissions(ACL _acl, Agent _agent, Voting _voting, address _dclMultiSig) internal {
-        _acl.createPermission(_voting, _agent, _agent.EXECUTE_ROLE(), address(this));
-        _acl.createPermission(_voting, _agent, _agent.RUN_SCRIPT_ROLE(), address(this));
+    function _setupVotingAggregator(ACL _acl, VotingAggregator _votingAggregator, TokenWrapper _wrappedToken) internal {
+        bytes32 addSourceRole = _votingAggregator.ADD_POWER_SOURCE_ROLE();
 
-        _acl.grantPermission(_dclMultiSig, _agent, _agent.EXECUTE_ROLE());
-        _acl.grantPermission(_dclMultiSig, _agent, _agent.RUN_SCRIPT_ROLE());
-
-        _acl.setPermissionManager(_dclMultiSig, _agent, _agent.EXECUTE_ROLE());
-        _acl.setPermissionManager(_dclMultiSig, _agent, _agent.RUN_SCRIPT_ROLE());
+        // Add wrapped token as a power source with weight of 1
+        _createPermissionForTemplate(_acl, _votingAggregator, addSourceRole);
+        _votingAggregator.addPowerSource(address(_wrappedToken), VotingAggregator.PowerSourceType.ERC20WithCheckpointing, 1);
+        _removePermissionFromTemplate(_acl, _votingAggregator, addSourceRole);
     }
 
-    function _validateMultiSig(address _multiSig) internal {
-        require(isContract(_multiSig), ERROR_BAD_MULTISIG);
+    function _createVotingAggregatorPermissions(ACL _acl, VotingAggregator _votingAggregator, address _grantee, address _manager) internal {
+        _acl.createPermission(_grantee, _votingAggregator, _votingAggregator.ADD_POWER_SOURCE_ROLE(), _manager);
+        _acl.createPermission(_grantee, _votingAggregator, _votingAggregator.MANAGE_POWER_SOURCE_ROLE(), _manager);
+        _acl.createPermission(_grantee, _votingAggregator, _votingAggregator.MANAGE_WEIGHTS_ROLE(), _manager);
     }
 
-    function _validateManaToken(ERC20 _mana) internal {
-        require(isContract(_mana), ERROR_BAD_MANA_TOKEN);
+    function _cachePreparedInstance(
+        Kernel _dao,
+        TokenWrapper _tokenWrapper,
+        VotingAggregator _votingAggregator
+    )
+        internal
+    {
+        Cache storage c = cache[msg.sender];
+        c.dao = address(_dao);
+        c.tokenWrapper = address(_tokenWrapper);
+        c.votingAggregator = address(_votingAggregator);
     }
 
-    function _validateVotingSettings(uint64[3] memory _votingSettings) internal {
+    function _popCache() internal returns (Kernel dao, TokenWrapper tokenWrapper, VotingAggregator votingAggregator) {
+        Cache storage c = cache[msg.sender];
+
+        dao = Kernel(c.dao);
+        tokenWrapper = TokenWrapper(c.tokenWrapper);
+        votingAggregator = VotingAggregator(c.votingAggregator);
+        delete c.dao;
+        delete c.tokenWrapper;
+        delete c.votingAggregator;
+
+        require(
+            address(dao) != address(0) && address(tokenWrapper) != address(0) && address(votingAggregator) != address(0),
+            ERROR_MISSING_CACHE
+        );
+    }
+
+    function _validateExternalToken(ERC20 _token) private view {
+        require(isContract(_token), ERROR_BAD_EXTERNAL_TOKEN);
+    }
+
+    function _validateSabMembers(address[] memory _sabMembers) private pure {
+        require(_sabMembers.length > 0, ERROR_MISSING_SAB_MEMBERS);
+    }
+
+    function _validateVotingSettings(uint64[3] memory _votingSettings) private pure {
         require(_votingSettings.length == 3, ERROR_BAD_VOTE_SETTINGS);
     }
 }
