@@ -51,6 +51,7 @@
   },
   "devDependencies": {
     "@aragon/test-helpers": "^2.0.0",
+    "@aragon/truffle-config-v4": "^1.0.1",
     "eslint": "^5.16.0",
     "eth-ens-namehash": "^2.0.8",
     "ganache-cli": "^6.0.3",
