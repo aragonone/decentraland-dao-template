@@ -1,210 +1,91 @@
 /* global contract artifacts web3 assert */
 
-const assertRevert = require('@aragon/templates-shared/helpers/assertRevert')(web3)
-
 const { hash: namehash } = require('eth-ens-namehash')
+
 const { APP_IDS } = require('@aragon/templates-shared/helpers/apps')
 const { randomId } = require('@aragon/templates-shared/helpers/aragonId')
-const { getEventArgument } = require('@aragon/test-helpers/events')
-const { deployedAddresses } = require('@aragon/templates-shared/lib/arapp-file')(web3)
-const { getInstalledApps, getInstalledAppsById } = require('@aragon/templates-shared/helpers/events')(artifacts)
 const { assertRole, assertMissingRole } = require('@aragon/templates-shared/helpers/assertRole')(web3)
+const assertRevert = require('@aragon/templates-shared/helpers/assertRevert')(web3)
+const { getInstalledApps, getInstalledAppsById } = require('@aragon/templates-shared/helpers/events')(artifacts)
+const { deployedAddresses } = require('@aragon/templates-shared/lib/arapp-file')(web3)
+
+const { getEventArgument } = require('@aragon/test-helpers/events')
 const { EMPTY_SCRIPT, encodeCallScript } = require('@aragon/test-helpers/evmScript')
 
-const DecentralandTemplate = artifacts.require('DecentralandTemplate')
-
-const ENS = artifacts.require('ENS')
-const ACL = artifacts.require('ACL')
-const Kernel = artifacts.require('Kernel')
-const Agent = artifacts.require('Agent')
-const Voting = artifacts.require('Voting')
-const TokenWrapper = artifacts.require('TokenWrapper')
+// Misc.
 const ERC20 = artifacts.require('ERC20Sample')
-const MultiSigMock = artifacts.require('MultiSigMock')
 const MiniMeToken = artifacts.require('MiniMeToken')
+
+// ENS
+const ENS = artifacts.require('ENS')
 const PublicResolver = artifacts.require('PublicResolver')
+
+// aragonOS core
+const ACL = artifacts.require('ACL')
 const EVMScriptRegistry = artifacts.require('EVMScriptRegistry')
+const Kernel = artifacts.require('Kernel')
+
+// aragon-apps
+const Agent = artifacts.require('Agent')
+const TokenManager = artifacts.require('TokenManager')
+const Voting = artifacts.require('Voting')
+
+// aragonone-apps
+const TokenWrapper = artifacts.require('TokenWrapper')
+const VotingAggregator = artifacts.require('VotingAggregator')
+
+const DecentralandTemplate = artifacts.require('DecentralandTemplate')
 
 const ONE_DAY = 60 * 60 * 24
 const ONE_WEEK = ONE_DAY * 7
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const MAX_ADDRESS = '0xffffffffffffffffffffffffffffffffffffffff'
+const MAX_UINT256 = new web3.BigNumber(2).toPower(256).minus(1)
 
-contract('DecentralandTemplate', ([owner, holder, someone]) => {
-  let daoID, template, dao, acl, ens, dclMultiSig
-  let voting, tokenWrapper, agent
-  let mana, token
-  let tokenWrapperNameHash
+const bigExp = (x, y) => new web3.BigNumber(x).times(new web3.BigNumber(10).toPower(y))
+const pct16 = x => bigExp(x, 16)
 
-  const TOKEN_NAME = 'Decentraland Token'
-  const TOKEN_SYMBOL = 'DCL'
+contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) => {
+  let ens
+  let mana
+  let template
 
-  const VOTE_DURATION = ONE_WEEK
-  const SUPPORT_REQUIRED = 50e16
-  const MIN_ACCEPTANCE_QUORUM = 5e16
-  const VOTING_SETTINGS = [SUPPORT_REQUIRED, MIN_ACCEPTANCE_QUORUM, VOTE_DURATION]
+  const COMMUNITY_VOTE_DURATION = ONE_WEEK
+  const COMMUNITY_SUPPORT_REQUIRED = pct16(50)
+  const COMMUNITY_MIN_ACCEPTANCE_QUORUM = pct16(5)
+  const COMMUNITY_VOTING_SETTINGS = [
+    COMMUNITY_SUPPORT_REQUIRED,
+    COMMUNITY_MIN_ACCEPTANCE_QUORUM,
+    COMMUNITY_VOTE_DURATION
+  ]
 
-  const loadDAO = async (tokenReceipt, instanceReceipt) => {
-    dao = Kernel.at(getEventArgument(instanceReceipt, 'DeployDao', 'dao'))
-    token = MiniMeToken.at(getEventArgument(tokenReceipt, 'DeployToken', 'token'))
-    acl = ACL.at(await dao.acl())
+  const SAB_MEMBERS = [member1, member2]
+  const SAB_VOTE_DURATION = ONE_DAY
+  const SAB_SUPPORT_REQUIRED = pct16(50)
+  const SAB_MIN_ACCEPTANCE_QUORUM = pct16(50)
+  const SAB_VOTING_SETTINGS = [SAB_SUPPORT_REQUIRED, SAB_MIN_ACCEPTANCE_QUORUM, SAB_VOTE_DURATION]
 
-    const installedApps = getInstalledAppsById(instanceReceipt)
-    installedApps['token-wrapper'] = getInstalledApps(instanceReceipt, tokenWrapperNameHash)
+  const TOKEN_WRAPPER_NAMEHASH = namehash('token-wrapper.hatch.aragonpm.eth')
+  const WRAPPED_TOKEN_NAME = 'Wrapped Decentraland Mana'
+  const WRAPPED_TOKEN_SYMBOL = 'wMANA'
 
-    assert.equal(dao.address, getEventArgument(instanceReceipt, 'SetupDao', 'dao'), 'should have emitted a SetupDao event')
+  const VOTING_AGGREGATOR_NAMEHASH = namehash('voting-aggregator.hatch.aragonpm.eth')
+  const AGGREGATE_TOKEN_NAME = 'Decentraland Voting Token'
+  const AGGREGATE_TOKEN_SYMBOL = 'DVT'
 
-    assert.equal(installedApps.voting.length, 1, 'should have installed 1 voting app')
-    voting = Voting.at(installedApps.voting[0])
-
-    assert.equal(installedApps.agent.length, 1, 'should have installed 1 agent app')
-    agent = Agent.at(installedApps.agent[0])
-
-    assert.equal(installedApps['token-wrapper'].length, 1, 'should have installed 1 token wrapper app')
-    tokenWrapper = TokenWrapper.at(installedApps['token-wrapper'][0])
+  const prepareInstance = (manaAddress, options) => {
+    return template.prepareInstanceWithVotingConnectors(
+      manaAddress,
+      WRAPPED_TOKEN_NAME,
+      WRAPPED_TOKEN_SYMBOL,
+      AGGREGATE_TOKEN_NAME,
+      AGGREGATE_TOKEN_SYMBOL,
+      options
+    )
   }
 
-  const itSetsUpDAOCorrectly = () => {
-    it('registers a new DAO on ENS', async () => {
-      const aragonIdNameHash = namehash(`${daoID}.aragonid.eth`)
-      const resolvedAddress = await PublicResolver.at(await ens.resolver(aragonIdNameHash)).addr(aragonIdNameHash)
-      assert.equal(resolvedAddress, dao.address, 'aragonId ENS name does not match')
-    })
-
-    it('creates a new token', async () => {
-      assert.equal(await token.name(), TOKEN_NAME)
-      assert.equal(await token.symbol(), TOKEN_SYMBOL)
-      assert.equal(await token.transfersEnabled(), false)
-      assert.equal((await token.decimals()).toString(), 18)
-    })
-
-    it('sets up DAO and ACL permissions correctly', async () => {
-      await assertRole(acl, dao, dclMultiSig, 'APP_MANAGER_ROLE')
-      await assertRole(acl, acl, dclMultiSig, 'CREATE_PERMISSIONS_ROLE')
-    })
-
-    it('sets up EVM scripts registry permissions correctly', async () => {
-      const reg = await EVMScriptRegistry.at(await acl.getEVMScriptRegistry())
-      await assertRole(acl, reg, voting, 'REGISTRY_ADD_EXECUTOR_ROLE')
-      await assertRole(acl, reg, voting, 'REGISTRY_MANAGER_ROLE')
-    })
-  }
-
-  const itSetsUpVotingCorrectly = () => {
-    it('should have voting app correctly setup', async () => {
-      assert.isTrue(await voting.hasInitialized(), 'voting not initialized')
-      assert.equal((await voting.supportRequiredPct()).toString(), SUPPORT_REQUIRED)
-      assert.equal((await voting.minAcceptQuorumPct()).toString(), MIN_ACCEPTANCE_QUORUM)
-      assert.equal((await voting.voteTime()).toString(), VOTE_DURATION)
-      assert.equal((await voting.votesLength()).toNumber(), 0, 'no vote should exist')
-
-      await assertRole(acl, voting, dclMultiSig, 'CREATE_VOTES_ROLE', tokenWrapper)
-      await assertRole(acl, voting, dclMultiSig, 'MODIFY_QUORUM_ROLE', voting)
-      await assertRole(acl, voting, dclMultiSig, 'MODIFY_SUPPORT_ROLE', voting)
-    })
-  }
-
-  const itSetsUpAgentCorrectly = () => {
-    it('should have agent app correctly setup', async () => {
-      assert.isTrue(await agent.hasInitialized(), 'agent not initialized')
-      assert.equal(await agent.designatedSigner(), ZERO_ADDRESS)
-
-      assert.equal(await dao.recoveryVaultAppId(), APP_IDS.agent, 'agent app is not being used as the vault app of the DAO')
-      assert.equal(web3.toChecksumAddress(await dao.getRecoveryVault()), agent.address, 'agent app is not being used as the vault app of the DAO')
-
-      await assertRole(acl, agent, dclMultiSig, 'EXECUTE_ROLE')
-      await assertRole(acl, agent, dclMultiSig, 'RUN_SCRIPT_ROLE')
-      await assertRole(acl, agent, dclMultiSig, 'EXECUTE_ROLE', voting)
-      await assertRole(acl, agent, dclMultiSig, 'RUN_SCRIPT_ROLE', voting)
-
-      await assertMissingRole(acl, agent, 'DESIGNATE_SIGNER_ROLE')
-      await assertMissingRole(acl, agent, 'ADD_PRESIGNED_HASH_ROLE')
-    })
-  }
-
-  const itSetsUpTokenWrapperCorrectly = () => {
-    describe('when inspecting the token wrapper app', () => {
-      it('has an erc20 and a minime token', async () => {
-        assert.isTrue(await tokenWrapper.isForwarder())
-        assert.equal(await tokenWrapper.erc20(), mana.address)
-        assert.equal(await tokenWrapper.token(), token.address)
-      })
-
-      it('can mint tokens', async () => {
-        await mana.approve(tokenWrapper.address, 2e18, { from: holder })
-        await tokenWrapper.lock(2e18, { from: holder })
-
-        assert.isTrue(await tokenWrapper.canForward(holder, '0x'))
-        assert.equal((await tokenWrapper.getLockedAmount(holder)).toString(), 2e18)
-        assert.equal((await token.balanceOf(holder)).toString(), 2e18)
-        assert.equal((await mana.balanceOf(holder)).toString(), 999998e18)
-      })
-
-      it('can not mint invalid amounts', async () => {
-        await assertRevert(tokenWrapper.lock(0, { from: holder }), 'TW_LOCK_AMOUNT_ZERO')
-        await assertRevert(tokenWrapper.lock(1e30, { from: holder }), 'TW_ERC20_TRANSFER_FROM_FAILED')
-      })
-
-      it('can burn tokens', async () => {
-        await tokenWrapper.unlock(1e18, { from: holder })
-
-        assert.equal((await tokenWrapper.getLockedAmount(holder)).toString(), 1e18)
-        assert.equal((await token.balanceOf(holder)).toString(), 1e18)
-        assert.equal((await mana.balanceOf(holder)).toString(), 999999e18)
-      })
-
-      it('can not burn invalid amounts', async () => {
-        await assertRevert(tokenWrapper.unlock(0, { from: holder }), 'TW_UNLOCK_AMOUNT_ZERO')
-        await assertRevert(tokenWrapper.unlock(1e30, { from: holder }), 'TW_INVALID_UNLOCK_AMOUNT')
-      })
-
-      it('does not allow to transfer tokens', async () => {
-        await assertRevert(token.transfer(someone, 1e16, { from: holder }))
-      })
-
-      it('does not allow to approve tokens', async () => {
-        await assertRevert(token.approve(someone, 1e16, { from: holder }))
-      })
-
-      describe('when creating votes', () => {
-        let holderBalance
-
-        before('check holder token balance', async () => {
-          holderBalance = (await token.balanceOf(holder)).toNumber()
-          assert.equal(holderBalance > 0, true, 'holder has no token balance')
-        })
-
-        before('forward a script that creates a vote via the token wrapper', async () => {
-          const action = { to: voting.address, calldata: voting.contract.newVote.getData(EMPTY_SCRIPT, 'Vote metadata') }
-          const script = encodeCallScript([action])
-          await tokenWrapper.forward(script, { from: holder })
-        })
-
-        it('creates a vote', async () => {
-          assert.equal((await voting.votesLength()).toNumber(), 1, 'a vote should exist')
-        })
-
-        it('does not allow a non holder to vote', async () => {
-          await assertRevert(
-            voting.vote(0, true, false, { from: someone }),
-            'VOTING_CAN_NOT_VOTE'
-          )
-        })
-
-        it('allows a token holder to vote', async () => {
-          await voting.vote(0, true, false, { from: holder })
-        })
-      })
-    })
-  }
-
-  const simulateMana = () => {
-    before('simulate mana', async () => {
-      mana = await ERC20.new({ from: holder }) // mints 1e18 tokens to sender
-    })
-  }
-
-  before('simulate dclMultiSig', async () => {
-    dclMultiSig = await MultiSigMock.new()
+  before('simulate mana', async () => {
+    mana = await ERC20.new({ from: holder }) // mints 1e18 tokens to sender
   })
 
   before('fetch template and ENS', async () => {
@@ -213,139 +94,221 @@ contract('DecentralandTemplate', ([owner, holder, someone]) => {
     template = DecentralandTemplate.at(address)
   })
 
-  before('prepare token-wrapper namehash', async () => {
-    tokenWrapperNameHash = namehash('token-wrapper.aragonpm.eth')
-  })
-
-  context('when creating instances with separate transactions', () => {
-    describe('when the creation fails', () => {
-      simulateMana()
-
-      context('when a token was not created before creating the instance', () => {
-        it('reverts', async () => {
-          await assertRevert(
-            template.newInstance(randomId(), mana.address, dclMultiSig.address, VOTING_SETTINGS, tokenWrapperNameHash),
-            'TEMPLATE_MISSING_TOKEN_CACHE'
-          )
-        })
-      })
-
-      context('when a token was previously created', () => {
-        before('create token', async () => {
-          await template.newToken(TOKEN_NAME, TOKEN_SYMBOL, { from: owner })
-        })
-
-        it('revertes when using an invalid id', async () => {
-          await assertRevert(
-            template.newInstance('', mana.address, dclMultiSig.address, VOTING_SETTINGS, tokenWrapperNameHash),
-            'TEMPLATE_INVALID_ID'
-          )
-        })
-
-        it('reverts when using an invalid mana token address', async () => {
-          await assertRevert(
-            template.newInstance(randomId(), someone, dclMultiSig.address, VOTING_SETTINGS, tokenWrapperNameHash),
-            'DECENTRALAND_BAD_MANA_TOKEN'
-          )
-        })
-
-        it('reverts when using an invalid dclMultiSig', async () => {
-          await assertRevert(
-            template.newInstance(randomId(), mana.address, someone, VOTING_SETTINGS, tokenWrapperNameHash),
-            'DECENTRALAND_BAD_MULTISIG'
-          )
-        })
-      })
-    })
-
-    describe('when the creation succeeds', () => {
-      let tokenReceipt, instanceReceipt
-
-      const createDAO = () => {
-        before('create dao', async () => {
-          daoID = randomId()
-          tokenReceipt = await template.newToken(TOKEN_NAME, TOKEN_SYMBOL, { from: owner })
-          instanceReceipt = await template.newInstance(daoID, mana.address, dclMultiSig.address, VOTING_SETTINGS, tokenWrapperNameHash, { from: owner })
-          await loadDAO(tokenReceipt, instanceReceipt)
-        })
-      }
-
-      const itCostsUpTo = (expectedTokenCreationCost, expectedDaoCreationCost) => {
-        const expectedTotalCost = expectedTokenCreationCost + expectedDaoCreationCost
-
-        it(`gas costs must be up to ~${expectedTotalCost} gas`, async () => {
-          const tokenCreationCost = tokenReceipt.receipt.gasUsed
-          assert.isAtMost(tokenCreationCost, expectedTokenCreationCost, `token creation call should cost up to ${tokenCreationCost} gas`)
-
-          const daoCreationCost = instanceReceipt.receipt.gasUsed
-          assert.isAtMost(daoCreationCost, expectedDaoCreationCost, `dao creation call should cost up to ${expectedDaoCreationCost} gas`)
-
-          const totalCost = tokenCreationCost + daoCreationCost
-          assert.isAtMost(totalCost, expectedTotalCost, `total costs should be up to ${expectedTotalCost} gas`)
-        })
-      }
-
-      simulateMana()
-      createDAO()
-      itCostsUpTo(1.8e6, 3.9e6)
-      itSetsUpDAOCorrectly()
-      itSetsUpVotingCorrectly()
-      itSetsUpAgentCorrectly()
-      itSetsUpTokenWrapperCorrectly()
-    })
-  })
-
-  context('when creating instances with a single transaction', () => {
-    describe('when the creation fails', () => {
-      simulateMana()
-
-      it('revertes when using an invalid id', async () => {
+  context('when the creation fails', () => {
+    context('when there was no instance prepared before', () => {
+      it('reverts when trying to prepare an instance with a bad token', async () => {
         await assertRevert(
-          template.newTokenAndInstance(TOKEN_NAME, TOKEN_SYMBOL, '', mana.address, dclMultiSig.address, VOTING_SETTINGS, tokenWrapperNameHash),
+          prepareInstance(someone), // someone is a normal EOA account
+          'DECENTRALAND_BAD_EXTERNAL_TOKEN'
+        )
+      })
+
+      it('reverts when there was no instance prepared before', async () => {
+        await assertRevert(
+          template.finalizeInstance(
+            randomId(),
+            COMMUNITY_VOTING_SETTINGS,
+            SAB_MEMBERS,
+            SAB_VOTING_SETTINGS
+          ),
+          'DECENTRALAND_MISSING_CACHE'
+        )
+      })
+    })
+
+    context('when there was an instance already prepared', () => {
+      before('prepare instance', async () => {
+        await prepareInstance(mana.address)
+      })
+
+      it('reverts when no sab members were given', async () => {
+        await assertRevert(
+          template.finalizeInstance(randomId(), COMMUNITY_VOTING_SETTINGS, [], SAB_VOTING_SETTINGS),
+          'DECENTRALAND_MISSING_SAB_MEMBERS'
+        )
+      })
+
+      it('reverts when an empty id is provided', async () => {
+        await assertRevert(
+          template.finalizeInstance('', COMMUNITY_VOTING_SETTINGS, SAB_MEMBERS, SAB_VOTING_SETTINGS),
           'TEMPLATE_INVALID_ID'
         )
       })
 
-      it('reverts when using an invalid mana token address', async () => {
-        await assertRevert(
-          template.newTokenAndInstance(TOKEN_NAME, TOKEN_SYMBOL, randomId(), someone, dclMultiSig.address, VOTING_SETTINGS, tokenWrapperNameHash),
-          'DECENTRALAND_BAD_MANA_TOKEN'
-        )
-      })
-
-      it('reverts when using an invalid dclMultiSig', async () => {
-        await assertRevert(
-          template.newTokenAndInstance(TOKEN_NAME, TOKEN_SYMBOL, randomId(), mana.address, someone, VOTING_SETTINGS, tokenWrapperNameHash),
-          'DECENTRALAND_BAD_MULTISIG'
-        )
-      })
+      // Note that missing voting settings are always filled in by solidity as 0
     })
+  })
 
-    describe('when the creation succeeds', () => {
-      let instanceReceipt
+  context('when the creation succeeds', () => {
+    let daoId
+    let prepareReceipt, finalizeReceipt
+    let dao, acl, sabToken
+    let agent, communityVoting, sabTokenManager, sabVoting, tokenWrapper, votingAggregator
 
-      const createDAO = () => {
-        before('create dao', async () => {
-          daoID = randomId()
-          instanceReceipt = await template.newTokenAndInstance(TOKEN_NAME, TOKEN_SYMBOL, daoID, mana.address, dclMultiSig.address, VOTING_SETTINGS, tokenWrapperNameHash, { from: owner })
-          await loadDAO(instanceReceipt, instanceReceipt)
-        })
+    before('create dao', async () => {
+      async function loadDAO(prepareReceipt, finalizeReceipt) {
+        dao = Kernel.at(getEventArgument(prepareReceipt, 'DeployDao', 'dao'))
+        acl = ACL.at(await dao.acl())
+
+        sabToken = MiniMeToken.at(getEventArgument(finalizeReceipt, 'DeployToken', 'token', 0))
+
+        const installedApps = getInstalledAppsById(finalizeReceipt)
+        // These apps aren't in the default set of apps, so getInstalledAppsById doesn't pick them up
+        installedApps['token-wrapper'] = getInstalledApps(prepareReceipt, TOKEN_WRAPPER_NAMEHASH)
+        installedApps['voting-aggregator'] = getInstalledApps(prepareReceipt, VOTING_AGGREGATOR_NAMEHASH)
+
+        assert.equal(installedApps.agent.length, 1, 'should have installed 1 agent app')
+        agent = Agent.at(installedApps.agent[0])
+
+        assert.equal(installedApps['token-manager'].length, 1, 'should have installed 1 token manager app')
+        sabTokenManager = TokenManager.at(installedApps['token-manager'])
+
+        assert.equal(installedApps.voting.length, 2, 'should have installed 2 voting apps')
+        sabVoting = Voting.at(installedApps.voting[0])
+        communityVoting = Voting.at(installedApps.voting[1])
+
+        assert.equal(installedApps['token-wrapper'].length, 1, 'should have installed 1 token wrapper app')
+        tokenWrapper = TokenWrapper.at(installedApps['token-wrapper'][0])
+
+        assert.equal(installedApps['voting-aggregator'].length, 1, 'should have installed 1 voting aggregator app')
+        votingAggregator = VotingAggregator.at(installedApps['voting-aggregator'][0])
+
+        assert.equal(dao.address, getEventArgument(finalizeReceipt, 'SetupDao', 'dao'), 'should have emitted a SetupDao event')
       }
 
-      const itCostsUpTo = (expectedTotalCost) => {
-        it(`gas costs must be up to ~${expectedTotalCost} gas`, async () => {
-          const daoCreationCost = instanceReceipt.receipt.gasUsed
-          assert.isAtMost(daoCreationCost, expectedTotalCost, `dao creation call should cost up to ${expectedTotalCost} gas`)
-        })
-      }
-
-      simulateMana()
-      createDAO()
-      itCostsUpTo(5.7e6)
-      itSetsUpDAOCorrectly()
-      itSetsUpVotingCorrectly()
-      itSetsUpAgentCorrectly()
-      itSetsUpTokenWrapperCorrectly()
+      daoId = randomId()
+      prepareReceipt = await prepareInstance(mana.address, { from: owner })
+      finalizeReceipt = await template.finalizeInstance(
+        daoId,
+        COMMUNITY_VOTING_SETTINGS,
+        SAB_MEMBERS,
+        SAB_VOTING_SETTINGS
+      )
+      await loadDAO(prepareReceipt, finalizeReceipt)
     })
+
+    const itCostsUpTo = () => {
+      const expectedPrepareCost = 0
+      const expectedFinalizeCost = 0
+
+      it(`prepare's gas costs must be up to ~${expectedPrepareCost} gas`, async () => {
+        const prepareCost = prepareReceipt.receipt.gasUsed
+        assert.isAtMost(prepareCost, expectedPrepareCost, `dao creation call should cost up to ${expectedPrepareCost} gas`)
+      })
+
+      it(`finalize's gas costs must be up to ~${expectedFinalizeCost} gas`, async () => {
+        const finalizeCost = finalizeReceipt.receipt.gasUsed
+        assert.isAtMost(finalizeCost, expectedFinalizeCost, `dao creation call should cost up to ${expectedFinalizeCost} gas`)
+      })
+    }
+
+    const itSetsUpDAOCorrectly = () => {
+      it('registers a new DAO on ENS', async () => {
+        const aragonIdNameHash = namehash(`${daoId}.aragonid.eth`)
+        const resolvedAddress = await PublicResolver.at(await ens.resolver(aragonIdNameHash)).addr(aragonIdNameHash)
+        assert.equal(resolvedAddress, dao.address, 'aragonId ENS name does not match')
+      })
+
+      it('sets up DAO and ACL permissions correctly', async () => {
+        await assertRole(acl, dao, sabVoting, 'APP_MANAGER_ROLE')
+        await assertRole(acl, acl, sabVoting, 'CREATE_PERMISSIONS_ROLE')
+      })
+
+      it('sets up EVM scripts registry permissions correctly', async () => {
+        const reg = await EVMScriptRegistry.at(await acl.getEVMScriptRegistry())
+        await assertRole(acl, reg, sabVoting, 'REGISTRY_ADD_EXECUTOR_ROLE')
+        await assertRole(acl, reg, sabVoting, 'REGISTRY_MANAGER_ROLE')
+      })
+    }
+
+    const itSetsUpAgentCorrectly = () => {
+      it('should have agent app correctly setup', async () => {
+        assert.isTrue(await agent.hasInitialized(), 'agent not initialized')
+        assert.equal(await agent.designatedSigner(), ZERO_ADDRESS)
+
+        assert.equal(await dao.recoveryVaultAppId(), APP_IDS.agent, 'agent app is not being used as the vault app of the DAO')
+        assert.equal(web3.toChecksumAddress(await dao.getRecoveryVault()), agent.address, 'agent app is not being used as the vault app of the DAO')
+
+        await assertRole(acl, agent, sabVoting, 'EXECUTE_ROLE')
+        await assertRole(acl, agent, sabVoting, 'RUN_SCRIPT_ROLE')
+        await assertRole(acl, agent, sabVoting, 'EXECUTE_ROLE', communityVoting)
+        await assertRole(acl, agent, sabVoting, 'RUN_SCRIPT_ROLE', communityVoting)
+
+        await assertMissingRole(acl, agent, 'DESIGNATE_SIGNER_ROLE')
+        await assertMissingRole(acl, agent, 'ADD_PRESIGNED_HASH_ROLE')
+      })
+    }
+
+    const itSetsUpCommunityVotingCorrectly = () => {
+      it('should have community voting app correctly setup', async () => {
+        assert.isTrue(await communityVoting.hasInitialized(), 'voting not initialized')
+        assert.equal((await communityVoting.supportRequiredPct()).toString(), COMMUNITY_SUPPORT_REQUIRED)
+        assert.equal((await communityVoting.minAcceptQuorumPct()).toString(), COMMUNITY_MIN_ACCEPTANCE_QUORUM)
+        assert.equal((await communityVoting.voteTime()).toString(), COMMUNITY_VOTE_DURATION)
+        assert.equal((await communityVoting.votesLength()).toNumber(), 0, 'no vote should exist')
+
+        await assertRole(acl, communityVoting, sabVoting, 'CREATE_VOTES_ROLE', votingAggregator)
+        await assertRole(acl, communityVoting, sabVoting, 'MODIFY_QUORUM_ROLE')
+        await assertRole(acl, communityVoting, sabVoting, 'MODIFY_SUPPORT_ROLE')
+      })
+    }
+
+    const itSetsUpSabTokenManagerCorrectly = () => {
+      it('should have sab token manager app correctly setup', async () => {
+        assert.isTrue(await sabTokenManager.hasInitialized(), 'token manager not initialized')
+        assert.equal(await sabTokenManager.token(), sabToken.address)
+
+        await assertRole(acl, sabTokenManager, sabVoting, 'MINT_ROLE')
+        await assertRole(acl, sabTokenManager, sabVoting, 'BURN_ROLE')
+
+        await assertMissingRole(acl, sabTokenManager, 'ISSUE_ROLE')
+        await assertMissingRole(acl, sabTokenManager, 'ASSIGN_ROLE')
+        await assertMissingRole(acl, sabTokenManager, 'REVOKE_VESTINGS_ROLE')
+      })
+    }
+
+    const itSetsUpSabVotingCorrectly = () => {
+      it('should have sab voting app correctly setup', async () => {
+        assert.isTrue(await sabVoting.hasInitialized(), 'voting not initialized')
+        assert.equal((await sabVoting.supportRequiredPct()).toString(), SAB_SUPPORT_REQUIRED)
+        assert.equal((await sabVoting.minAcceptQuorumPct()).toString(), SAB_MIN_ACCEPTANCE_QUORUM)
+        assert.equal((await sabVoting.voteTime()).toString(), SAB_VOTE_DURATION)
+        assert.equal((await sabVoting.votesLength()).toNumber(), 0, 'no vote should exist')
+
+        await assertRole(acl, sabVoting, sabVoting, 'CREATE_VOTES_ROLE', sabTokenManager)
+        await assertRole(acl, sabVoting, sabVoting, 'MODIFY_QUORUM_ROLE')
+        await assertRole(acl, sabVoting, sabVoting, 'MODIFY_SUPPORT_ROLE')
+      })
+    }
+
+    const itSetsUpTokenWrapperCorrectly = () => {
+      it('should have mana token wrapper correctly set up', async () => {
+        assert.isTrue(await tokenWrapper.hasInitialized(), 'token wrapper not initialized')
+        assert.equal(await tokenWrapper.depositedToken(), mana.address, 'attached to correct token')
+        assert.equal((await tokenWrapper.decimals()).toString(), (await mana.decimals()).toString())
+        assert.equal(await tokenWrapper.name(), WRAPPED_TOKEN_NAME)
+        assert.equal(await tokenWrapper.symbol(), WRAPPED_TOKEN_SYMBOL)
+
+        // Check that the "install" permission was granted
+        await assertRole(acl, tokenWrapper, MAX_ADDRESS, MAX_UINT256)
+      })
+    }
+
+    const itSetsUpVotingAggregatorCorrectly = () => {
+    }
+
+    const itOperatesCorrectly = () => {
+      // FIXME
+    }
+
+    itCostsUpTo()
+    itSetsUpDAOCorrectly()
+    itSetsUpAgentCorrectly()
+    itSetsUpCommunityVotingCorrectly()
+    itSetsUpSabTokenManagerCorrectly()
+    itSetsUpSabVotingCorrectly()
+    itSetsUpTokenWrapperCorrectly()
+    itSetsUpVotingAggregatorCorrectly()
+    itOperatesCorrectly()
   })
 })
