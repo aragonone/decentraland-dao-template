@@ -7,7 +7,7 @@ const { randomId } = require('@aragon/templates-shared/helpers/aragonId')
 const { assertRole, assertMissingRole } = require('@aragon/templates-shared/helpers/assertRole')(web3)
 const assertRevert = require('@aragon/templates-shared/helpers/assertRevert')(web3)
 const { getInstalledApps, getInstalledAppsById } = require('@aragon/templates-shared/helpers/events')(artifacts)
-const { deployedAddresses } = require('@aragon/templates-shared/lib/arapp-file')(web3)
+const { getENS, getTemplateAddress } = require('@aragon/templates-shared/lib/ens')(web3, artifacts)
 
 const { getEventArgument } = require('@aragon/test-helpers/events')
 const { EMPTY_SCRIPT, encodeCallScript } = require('@aragon/test-helpers/evmScript')
@@ -17,7 +17,6 @@ const ERC20 = artifacts.require('ERC20Sample')
 const MiniMeToken = artifacts.require('MiniMeToken')
 
 // ENS
-const ENS = artifacts.require('ENS')
 const PublicResolver = artifacts.require('PublicResolver')
 
 // aragonOS core
@@ -34,7 +33,7 @@ const Voting = artifacts.require('Voting')
 const TokenWrapper = artifacts.require('TokenWrapper')
 const VotingAggregator = artifacts.require('VotingAggregator')
 
-const DecentralandTemplate = artifacts.require('DecentralandTemplate')
+const MockDecentralandTemplate = artifacts.require('MockDecentralandTemplate')
 
 const ONE_DAY = 60 * 60 * 24
 const ONE_WEEK = ONE_DAY * 7
@@ -65,11 +64,14 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
   const SAB_MIN_ACCEPTANCE_QUORUM = pct16(50)
   const SAB_VOTING_SETTINGS = [SAB_SUPPORT_REQUIRED, SAB_MIN_ACCEPTANCE_QUORUM, SAB_VOTE_DURATION]
 
-  const TOKEN_WRAPPER_NAMEHASH = namehash('token-wrapper.hatch.aragonpm.eth')
+  // Use base aragonpm.eth namehashes for these two apps as they're deployed to the base aragonPM
+  // instance in the tests
+  const MOCK_TOKEN_WRAPPER_NAMEHASH = namehash('token-wrapper.aragonpm.eth')
+  const MOCK_VOTING_AGGREGATOR_NAMEHASH = namehash('voting-aggregator.aragonpm.eth')
+
   const WRAPPED_TOKEN_NAME = 'Wrapped Decentraland Mana'
   const WRAPPED_TOKEN_SYMBOL = 'wMANA'
 
-  const VOTING_AGGREGATOR_NAMEHASH = namehash('voting-aggregator.hatch.aragonpm.eth')
   const AGGREGATE_TOKEN_NAME = 'Decentraland Voting Token'
   const AGGREGATE_TOKEN_SYMBOL = 'DVT'
 
@@ -89,9 +91,8 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
   })
 
   before('fetch template and ENS', async () => {
-    const { registry, address } = await deployedAddresses()
-    ens = ENS.at(registry)
-    template = DecentralandTemplate.at(address)
+    ens = await getENS()
+    template = MockDecentralandTemplate.at(await getTemplateAddress())
   })
 
   context('when the creation fails', () => {
@@ -118,19 +119,19 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
 
     context('when there was an instance already prepared', () => {
       before('prepare instance', async () => {
-        await prepareInstance(mana.address)
+        await prepareInstance(mana.address, { from: owner })
       })
 
       it('reverts when no sab members were given', async () => {
         await assertRevert(
-          template.finalizeInstance(randomId(), COMMUNITY_VOTING_SETTINGS, [], SAB_VOTING_SETTINGS),
+          template.finalizeInstance(randomId(), COMMUNITY_VOTING_SETTINGS, [], SAB_VOTING_SETTINGS, { from: owner }),
           'DECENTRALAND_MISSING_SAB_MEMBERS'
         )
       })
 
       it('reverts when an empty id is provided', async () => {
         await assertRevert(
-          template.finalizeInstance('', COMMUNITY_VOTING_SETTINGS, SAB_MEMBERS, SAB_VOTING_SETTINGS),
+          template.finalizeInstance('', COMMUNITY_VOTING_SETTINGS, SAB_MEMBERS, SAB_VOTING_SETTINGS, { from: owner }),
           'TEMPLATE_INVALID_ID'
         )
       })
@@ -154,14 +155,14 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
 
         const installedApps = getInstalledAppsById(finalizeReceipt)
         // These apps aren't in the default set of apps, so getInstalledAppsById doesn't pick them up
-        installedApps['token-wrapper'] = getInstalledApps(prepareReceipt, TOKEN_WRAPPER_NAMEHASH)
-        installedApps['voting-aggregator'] = getInstalledApps(prepareReceipt, VOTING_AGGREGATOR_NAMEHASH)
+        installedApps['token-wrapper'] = getInstalledApps(prepareReceipt, MOCK_TOKEN_WRAPPER_NAMEHASH)
+        installedApps['voting-aggregator'] = getInstalledApps(prepareReceipt, MOCK_VOTING_AGGREGATOR_NAMEHASH)
 
         assert.equal(installedApps.agent.length, 1, 'should have installed 1 agent app')
         agent = Agent.at(installedApps.agent[0])
 
         assert.equal(installedApps['token-manager'].length, 1, 'should have installed 1 token manager app')
-        sabTokenManager = TokenManager.at(installedApps['token-manager'])
+        sabTokenManager = TokenManager.at(installedApps['token-manager'][0])
 
         assert.equal(installedApps.voting.length, 2, 'should have installed 2 voting apps')
         sabVoting = Voting.at(installedApps.voting[0])
@@ -182,14 +183,15 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
         daoId,
         COMMUNITY_VOTING_SETTINGS,
         SAB_MEMBERS,
-        SAB_VOTING_SETTINGS
+        SAB_VOTING_SETTINGS,
+        { from: owner }
       )
       await loadDAO(prepareReceipt, finalizeReceipt)
     })
 
     const itCostsUpTo = () => {
-      const expectedPrepareCost = 0
-      const expectedFinalizeCost = 0
+      const expectedPrepareCost = 2.8e6
+      const expectedFinalizeCost = 5.4e6
 
       it(`prepare's gas costs must be up to ~${expectedPrepareCost} gas`, async () => {
         const prepareCost = prepareReceipt.receipt.gasUsed
@@ -222,7 +224,7 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
     }
 
     const itSetsUpAgentCorrectly = () => {
-      it('should have agent app correctly setup', async () => {
+      it('should setup agent app correctly', async () => {
         assert.isTrue(await agent.hasInitialized(), 'agent not initialized')
         assert.equal(await agent.designatedSigner(), ZERO_ADDRESS)
 
@@ -240,7 +242,7 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
     }
 
     const itSetsUpCommunityVotingCorrectly = () => {
-      it('should have community voting app correctly setup', async () => {
+      it('should setup community voting app correctly', async () => {
         assert.isTrue(await communityVoting.hasInitialized(), 'voting not initialized')
         assert.equal((await communityVoting.supportRequiredPct()).toString(), COMMUNITY_SUPPORT_REQUIRED)
         assert.equal((await communityVoting.minAcceptQuorumPct()).toString(), COMMUNITY_MIN_ACCEPTANCE_QUORUM)
@@ -254,12 +256,12 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
     }
 
     const itSetsUpSabTokenManagerCorrectly = () => {
-      it('should have sab token manager app correctly setup', async () => {
+      it('should setup sab token manager app correctly', async () => {
         assert.isTrue(await sabTokenManager.hasInitialized(), 'token manager not initialized')
         assert.equal(await sabTokenManager.token(), sabToken.address)
 
-        await assertRole(acl, sabTokenManager, sabVoting, 'MINT_ROLE')
-        await assertRole(acl, sabTokenManager, sabVoting, 'BURN_ROLE')
+        await assertRole(acl, sabTokenManager, sabVoting, 'MINT_ROLE', communityVoting)
+        await assertRole(acl, sabTokenManager, sabVoting, 'BURN_ROLE', communityVoting)
 
         await assertMissingRole(acl, sabTokenManager, 'ISSUE_ROLE')
         await assertMissingRole(acl, sabTokenManager, 'ASSIGN_ROLE')
@@ -268,7 +270,7 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
     }
 
     const itSetsUpSabVotingCorrectly = () => {
-      it('should have sab voting app correctly setup', async () => {
+      it('should setup sab voting app correctly', async () => {
         assert.isTrue(await sabVoting.hasInitialized(), 'voting not initialized')
         assert.equal((await sabVoting.supportRequiredPct()).toString(), SAB_SUPPORT_REQUIRED)
         assert.equal((await sabVoting.minAcceptQuorumPct()).toString(), SAB_MIN_ACCEPTANCE_QUORUM)
@@ -282,15 +284,23 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
     }
 
     const itSetsUpTokenWrapperCorrectly = () => {
-      it('should have mana token wrapper correctly set up', async () => {
+      it('should setup mana token wrapper correctly', async () => {
         assert.isTrue(await tokenWrapper.hasInitialized(), 'token wrapper not initialized')
         assert.equal(await tokenWrapper.depositedToken(), mana.address, 'attached to correct token')
-        assert.equal((await tokenWrapper.decimals()).toString(), (await mana.decimals()).toString())
         assert.equal(await tokenWrapper.name(), WRAPPED_TOKEN_NAME)
         assert.equal(await tokenWrapper.symbol(), WRAPPED_TOKEN_SYMBOL)
 
+        // ERC20Sample doesn't implement decimals
+        await assertRevert(tokenWrapper.decimals())
+
         // Check that the "install" permission was granted
-        await assertRole(acl, tokenWrapper, MAX_ADDRESS, MAX_UINT256)
+        async function assertRole(acl, app, manager, permission, grantee = manager) {
+          const managerAddress = await acl.getPermissionManager(app.address, permission)
+
+          assert.equal(web3.toChecksumAddress(managerAddress), web3.toChecksumAddress(manager.address), `${app.address} ${permission} Manager should match`)
+          assert.isTrue(await acl.hasPermission(grantee.address, app.address, permission), `Grantee should have ${app.address} role ${permission}`)
+        }
+        await assertRole(acl, tokenWrapper, sabVoting, MAX_UINT256, { address: MAX_ADDRESS })
       })
     }
 
@@ -298,7 +308,6 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
     }
 
     const itOperatesCorrectly = () => {
-      // FIXME
     }
 
     itCostsUpTo()

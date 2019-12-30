@@ -228,7 +228,7 @@ contract DecentralandTemplate is BaseTemplate {
         internal returns (TokenWrapper)
     {
         bytes memory initializeData = abi.encodeWithSelector(TokenWrapper(0).initialize.selector, _tokenToWrap, _wrappedTokenName, _wrappedTokenSymbol);
-        return TokenWrapper(_installNonDefaultApp(_dao, TOKEN_WRAPPER_APP_ID, initializeData));
+        return TokenWrapper(_installNonDefaultApp(_dao, _getTokenWrapperAppId(), initializeData));
     }
 
     function _installVotingAggregatorApp(
@@ -239,7 +239,7 @@ contract DecentralandTemplate is BaseTemplate {
         internal returns (VotingAggregator)
     {
         bytes memory initializeData = abi.encodeWithSelector(VotingAggregator(0).initialize.selector, _aggregateTokenName, _aggregateTokenSymbol, AGGREGATOR_DECIMALS);
-        return VotingAggregator(_installNonDefaultApp(_dao, VOTING_AGGREGATOR_APP_ID, initializeData));
+        return VotingAggregator(_installNonDefaultApp(_dao, _getVotingAggregatorAppId(), initializeData));
     }
 
     function _setupVotingAggregator(ACL _acl, VotingAggregator _votingAggregator, TokenWrapper _wrappedToken) internal {
@@ -284,6 +284,14 @@ contract DecentralandTemplate is BaseTemplate {
             address(dao) != address(0) && address(tokenWrapper) != address(0) && address(votingAggregator) != address(0),
             ERROR_MISSING_CACHE
         );
+    }
+
+    function _getTokenWrapperAppId() internal view returns (bytes32) {
+        return TOKEN_WRAPPER_APP_ID;
+    }
+
+    function _getVotingAggregatorAppId() internal view returns (bytes32) {
+        return VOTING_AGGREGATOR_APP_ID;
     }
 
     function _validateExternalToken(ERC20 _token) private view {
