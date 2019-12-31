@@ -39,16 +39,23 @@
     "publish:mainnet": "aragon apm publish major $(npm run deploy:mainnet | tail -n 1) --environment mainnet"
   },
   "dependencies": {
-    "@aragon/os": "4.2.0",
-    "@aragon/templates-shared": "^1.0.0",
-    "@aragon/token-wrapper": "github:aragonone/token-wrapper"
+    "@aragon/os": "4.3.0",
+    "@aragon/id": "2.0.3",
+    "@aragon/apps-agent": "^2.0.0",
+    "@aragon/apps-token-manager": "^2.1.0",
+    "@aragon/apps-voting": "^2.1.0",
+    "@aragon/apps-shared-minime": "^1.0.0",
+    "@aragon/templates-shared": "1.0.1",
+    "@aragonone/apps-token-wrapper": "^1.0.0-rc.2",
+    "@aragonone/apps-voting-aggregator": "^1.0.0-rc.2"
   },
   "devDependencies": {
     "@aragon/test-helpers": "^2.0.0",
+    "@aragon/truffle-config-v4": "^1.0.1",
     "eslint": "^5.16.0",
     "eth-ens-namehash": "^2.0.8",
     "ganache-cli": "^6.0.3",
-    "solium": "^1.0.4",
+    "solium": "^1.2.3",
     "truffle": "4.1.14",
     "web3-eth-abi": "^1.2.0"
   }
