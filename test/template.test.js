@@ -88,8 +88,9 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
   const AGGREGATE_TOKEN_SYMBOL = 'DVT'
 
   const VOTING_AGGREGATOR_POWER_SOURCE_TYPES = {
-    ERC20WithCheckpointing: '0',
-    ERC900: '1',
+    Invalid: '0',
+    ERC20WithCheckpointing: '1',
+    ERC900: '2',
   }
 
   const prepareInstance = (manaAddress, options) => {
@@ -207,8 +208,8 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
     })
 
     const itCostsUpTo = () => {
-      const expectedPrepareCost = 2.8e6
-      const expectedFinalizeCost = 5.4e6
+      const expectedPrepareCost = 2.85e6
+      const expectedFinalizeCost = 5.7e6
 
       it(`prepare's gas costs must be up to ~${expectedPrepareCost} gas`, async () => {
         const prepareCost = prepareReceipt.receipt.gasUsed
@@ -331,11 +332,14 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
         assert.equal(await votingAggregator.symbol(), AGGREGATE_TOKEN_SYMBOL)
 
         // Has added token wrapper as a source
-        const [sourceAddress, sourceType, sourceWeight] = await votingAggregator.getPowerSource(0)
+        const sourceAddress = await votingAggregator.powerSources(0)
         assertAddressesEqual(sourceAddress, tokenWrapper.address, 'voting aggregator\'s initial source is not token wrapper')
+
+        const [sourceType, sourceEnabled, sourceWeight] = await votingAggregator.getPowerSourceDetails(tokenWrapper.address)
         assert.equal(sourceType, VOTING_AGGREGATOR_POWER_SOURCE_TYPES.ERC20WithCheckpointing, 'voting aggregator\'s initial type is not checkpointed erc20')
+        assert.isTrue(sourceEnabled, 'voting aggregator\'s initial status is not enabled')
         assert.equal(sourceWeight, '1', 'voting aggregator\'s token wrapper source weight is not 1')
-        assert.equal(await votingAggregator.powerSourcesLength(), '1', 'voting aggregator should only have one source initially')
+        assert.equal(await votingAggregator.getPowerSourcesLength(), '1', 'voting aggregator should only have one source initially')
 
         await assertRole(acl, votingAggregator, sabVoting, 'ADD_POWER_SOURCE_ROLE')
         await assertRole(acl, votingAggregator, sabVoting, 'MANAGE_POWER_SOURCE_ROLE')

@@ -46,8 +46,8 @@
     "@aragon/apps-voting": "^2.1.0",
     "@aragon/apps-shared-minime": "^1.0.0",
     "@aragon/templates-shared": "1.0.1",
-    "@aragonone/apps-token-wrapper": "^1.0.0-rc.2",
-    "@aragonone/apps-voting-aggregator": "^1.0.0-rc.2"
+    "@aragonone/apps-token-wrapper": "^1.0.0-rc.3",
+    "@aragonone/apps-voting-aggregator": "^1.0.0-rc.3"
   },
   "devDependencies": {
     "@aragon/test-helpers": "^2.0.0",
