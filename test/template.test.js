@@ -267,7 +267,7 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
         assert.equal((await communityVoting.voteTime()).toString(), COMMUNITY_VOTE_DURATION)
         assert.equal(await communityVoting.votesLength(), '0', 'no vote should exist')
 
-        await assertRole(acl, communityVoting, sabVoting, 'CREATE_VOTES_ROLE', votingAggregator)
+        await assertRole(acl, communityVoting, sabVoting, 'CREATE_VOTES_ROLE', sabTokenManager)
         await assertRole(acl, communityVoting, sabVoting, 'MODIFY_QUORUM_ROLE')
         await assertRole(acl, communityVoting, sabVoting, 'MODIFY_SUPPORT_ROLE')
       })
@@ -481,17 +481,23 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
           })
         }
 
-        for (const [account, name] of [[someone, 'someone'], [member1, 'sab member']]) {
-          it(`does not allow ${name} to create votes by forwarding through voting aggregator`, async () => {
-            assert.equal((await votingAggregator.balanceOf(account)).toString(), '0')
-            assert.isFalse(await votingAggregator.canForward(account, createVoteScript))
-            await assertRevert(votingAggregator.forward(createVoteScript, { from: account }))
+        for (const [account, name] of [[someone, 'someone'], [holder, 'holder']]) {
+          it(`does not allow ${name} to create votes by forwarding through sab token manager`, async () => {
+            assert.equal((await sabToken.balanceOf(account)).toString(), '0')
+            assert.isFalse(await sabTokenManager.canForward(account, createVoteScript))
+            await assertRevert(sabTokenManager.forward(createVoteScript, { from: account }))
           })
         }
 
-        it('holder can create votes by forwarding through voting aggregator', async () => {
+        it('does not allow holder to create votes by forwarding through voting aggregator', async () => {
           assert.isTrue(await votingAggregator.canForward(holder, createVoteScript))
-          await votingAggregator.forward(createVoteScript, { from: holder })
+          // Even though holder can forward through the VotingAggregator, they can't create new votes
+          await assertRevert(votingAggregator.forward(createVoteScript, { from: holder }))
+        })
+
+        it('sab member can create votes by forwarding through sab token manager', async () => {
+          assert.isTrue(await sabTokenManager.canForward(member1, createVoteScript))
+          await sabTokenManager.forward(createVoteScript, { from: member1 })
 
           assert.equal(await votingInstance.votesLength(), '1', 'a vote should exist')
         })
@@ -536,6 +542,12 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
             await assertRevert(sabTokenManager.forward(createVoteScript, { from: account }))
           })
         }
+
+        it('does not allow holder to create votes by forwarding through voting aggregator', async () => {
+          assert.isTrue(await votingAggregator.canForward(holder, createVoteScript))
+          // Even though holder can forward through the VotingAggregator, they can't create new votes
+          await assertRevert(votingAggregator.forward(createVoteScript, { from: holder }))
+        })
 
         it('sab member can create votes by forwarding through sab token manager', async () => {
           assert.isTrue(await sabTokenManager.canForward(member1, createVoteScript))

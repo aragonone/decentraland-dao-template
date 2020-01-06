@@ -163,7 +163,7 @@ contract DecentralandTemplate is BaseTemplate {
         // TokenManager's will be assigned later as its permissions will be granted to the community voting app
         _createVotingPermissions(_acl, sabVoting, sabVoting, sabTokenManager, sabVoting);
 
-        // Give permissions on already installed apps to SAB
+        // Give permissions of already installed apps to SAB
         _createEvmScriptsRegistryPermissions(_acl, sabVoting, sabVoting);
         _createVotingAggregatorPermissions(_acl, _votingAggregator, sabVoting, sabVoting);
 
@@ -194,7 +194,7 @@ contract DecentralandTemplate is BaseTemplate {
         );
 
         // Set permissions
-        _createVotingPermissions(_acl, communityVoting, _sabVoting, _votingAggregator, _sabVoting);
+        _createVotingPermissions(_acl, communityVoting, _sabVoting, _sabTokenManager, _sabVoting);
         _createTokenManagerPermissions(_acl, _sabTokenManager, communityVoting, _sabVoting);
 
         return communityVoting;
