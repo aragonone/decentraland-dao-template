@@ -276,8 +276,10 @@ contract('DecentralandTemplate', ([someone, owner, holder, member1, member2]) =>
 
     const itSetsUpSabTokenManagerCorrectly = () => {
       it('should setup sab token manager app correctly', async () => {
-        assert.isTrue(await sabTokenManager.hasInitialized(), 'token manager not initialized')
+        assert.isTrue(await sabTokenManager.hasInitialized(), 'sab token manager not initialized')
         assertAddressesEqual(await sabTokenManager.token(), sabToken.address)
+        assert.equal((await sabTokenManager.maxAccountTokens()).toString(), '1', 'sab token manager should only allow one token per holder')
+        assert.isFalse(await sabToken.transfersEnabled(), 'sab token should disallow transfers')
 
         await assertRole(acl, sabTokenManager, sabVoting, 'MINT_ROLE', communityVoting)
         await assertRole(acl, sabTokenManager, sabVoting, 'BURN_ROLE', communityVoting)
