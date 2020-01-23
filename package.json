@@ -39,12 +39,13 @@
     "publish:mainnet": "aragon apm publish major $(npm run deploy:mainnet | tail -n 1) --environment mainnet"
   },
   "dependencies": {
-    "@aragon/os": "4.3.0",
-    "@aragon/id": "2.0.3",
     "@aragon/apps-agent": "^2.0.0",
+    "@aragon/apps-finance": "^3.0.0",
+    "@aragon/apps-shared-minime": "^1.0.0",
     "@aragon/apps-token-manager": "^2.1.0",
     "@aragon/apps-voting": "^2.1.0",
-    "@aragon/apps-shared-minime": "^1.0.0",
+    "@aragon/id": "2.0.3",
+    "@aragon/os": "4.3.0",
     "@aragon/templates-shared": "1.0.1",
     "@aragonone/apps-token-wrapper": "^1.0.0-rc.3",
     "@aragonone/apps-voting-aggregator": "^1.0.0-rc.3"

@@ -5,6 +5,7 @@ import "@aragon/templates-shared/contracts/BaseTemplate.sol";
 import "@aragon/os/contracts/lib/token/ERC20.sol";
 
 import "@aragon/apps-agent/contracts/Agent.sol";
+import "@aragon/apps-finance/contracts/Finance.sol";
 import "@aragon/apps-token-manager/contracts/TokenManager.sol";
 import "@aragon/apps-voting/contracts/Voting.sol";
 import "@aragon/apps-shared-minime/contracts/MiniMeToken.sol";
@@ -33,6 +34,9 @@ contract DecentralandTemplate is BaseTemplate {
     uint8 constant private SAB_TOKEN_DECIMALS = uint8(0);
     uint256 constant private SAB_TOKEN_MAX_PER_ACCOUNT = uint256(1);
     bool constant private SAB_TOKEN_TRANSFERABLE = false;
+
+    // Soft settings
+    uint64 constant private DEFAULT_FINANCE_PERIOD = uint64(30 days);
 
     struct Cache {
         address dao;
@@ -101,7 +105,8 @@ contract DecentralandTemplate is BaseTemplate {
         string _id,
         uint64[3] _communityVotingSettings,
         address[] _sabMembers,
-        uint64[3] _sabVotingSettings
+        uint64[3] _sabVotingSettings,
+        uint64 _financePeriod
     )
         external
     {
@@ -130,7 +135,7 @@ contract DecentralandTemplate is BaseTemplate {
             sabTokenManager,
             sabVoting
         );
-        _setupAgent(dao, acl, sabVoting, communityVoting);
+        _setupAgentAndFinance(dao, acl, sabVoting, communityVoting, _financePeriod);
 
         // Finalize org
         _transferRootPermissionsFromTemplateAndFinalizeDAO(dao, sabVoting);
@@ -200,10 +205,21 @@ contract DecentralandTemplate is BaseTemplate {
         return communityVoting;
     }
 
-    function _setupAgent(Kernel _dao, ACL _acl, Voting _sabVoting, Voting _communityVoting) internal {
+    function _setupAgentAndFinance(
+        Kernel _dao,
+        ACL _acl,
+        Voting _sabVoting,
+        Voting _communityVoting,
+        uint64 _financePeriod
+    ) internal {
         Agent agent = _installDefaultAgentApp(_dao);
+        Finance finance = _installFinanceApp(_dao, agent, _financePeriod == 0 ? DEFAULT_FINANCE_PERIOD : _financePeriod);
 
-        // Set permissions
+        // Set Finance permission
+        _createFinancePermissions(_acl, finance, _sabVoting, _sabVoting);
+        _createFinanceCreatePaymentsPermission(_acl, finance, _sabVoting, _sabVoting);
+
+        // Set Agent permissions
         bytes32 executeRole = agent.EXECUTE_ROLE();
         bytes32 runScriptRole = agent.RUN_SCRIPT_ROLE();
 
