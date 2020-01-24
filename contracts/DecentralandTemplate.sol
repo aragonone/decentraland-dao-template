@@ -96,7 +96,7 @@ contract DecentralandTemplate is BaseTemplate {
 
     /**
     * @dev Finalize a previously prepared DAO instance cached by the user
-    * @param _id String with the name for org, will assign `[id].aragonid.eth`
+    * @param _id Optional string with the name for org, will assign `[id].aragonid.eth`
     * @param _communityVotingSettings Array of [supportRequired, minAcceptanceQuorum, voteDuration] settings for the community Voting app
     * @param _sabMembers Array of initial security advisory board member addresses
     * @param _sabVotingSettings Array of [supportRequired, minAcceptanceQuorum, voteDuration] settings for the security advisory board Voting app
@@ -110,7 +110,6 @@ contract DecentralandTemplate is BaseTemplate {
     )
         external
     {
-        _validateId(_id);
         _validateVotingSettings(_communityVotingSettings);
         _validateSabMembers(_sabMembers);
         _validateVotingSettings(_sabVotingSettings);
@@ -139,7 +138,11 @@ contract DecentralandTemplate is BaseTemplate {
 
         // Finalize org
         _transferRootPermissionsFromTemplateAndFinalizeDAO(dao, sabVoting);
-        _registerID(_id, dao);
+
+        // Assign name if given
+        if (bytes(_id).length > 0) {
+            _registerID(_id, dao);
+        }
     }
 
     function _setupSab(
